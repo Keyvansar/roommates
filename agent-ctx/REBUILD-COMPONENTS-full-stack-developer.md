@@ -1,0 +1,39 @@
+# REBUILD-COMPONENTS — full-stack-developer agent
+
+## Task
+Create all 12 shared component files for the هم‌خانه‌یاب (roommates) Persian RTL PWA rebuild.
+
+## Files created (all under `/home/z/my-project/src/components/`)
+
+| File | Purpose |
+|---|---|
+| `tabs.ts` | `TabKey` union (`inventory`/`to-buy`/`balance`/`insights`/`history`/`moderation`/`settings`), `TabDef` interface (`{key,label,icon,minRole?}`), `TABS` array with lucide icons (Boxes/ShoppingCart/Scale/BarChart3/History/ShieldCheck/Settings) and `minRole: 'MODERATOR'` on the moderation tab, plus `ROLE_RANK` + `hasMinRole(role, minRole)` helper used by BottomNav. |
+| `loading-splash.tsx` | Centered 🛒 + "در حال بارگذاری هم‌خانه‌یاب…" inside `.app-shell` flex column. |
+| `category-icon.tsx` | `CATEGORY_ICONS` map of 27 lucide icons (Sparkles/Refrigerator/Beef/Apple/Cookie/Package/ShoppingBasket/Coffee/Wine/Utensils/Bath/Trash2/Carrot/Egg/Sandwich/Milk/Flower2/Leaf/SprayCan/Brush/PiggyBank/Pencil/Hammer/Lightbulb/Battery/Salad/Pizza), `CATEGORY_ICON_LIST`, and `CategoryIcon` component with `ShoppingBasket` fallback when name is missing or unknown. |
+| `badges.tsx` | `TierBadge` (uses `useTierMeta` for label/color and `useFaDigits` for points, renders colored dot + label + points), `StatusBadge` (uses `STATUS_META` from `@/lib/types`, colored dot + label). |
+| `bottom-nav.tsx` | Sticky bottom `<nav>` with `<ul role="list">` grid whose column count = number of visible tabs (`gridTemplateColumns: repeat(N, minmax(0, 1fr))`). Filters tabs via `hasMinRole(role, t.minRole)` where `role` comes from `useUserStore` first then `useMe` fallback. Active tab: icon `scale-110` + `text-primary` + top indicator bar (w-8 h-0.5 bg-primary). To-buy tab carries a destructive-color badge with depleted count (filtered from `useItems`) formatted with `useFaDigits`. Each button uses `tap-scale` and `rounded-md hover:bg-accent/60`, container has `pb-safe`. |
+| `user-picker.tsx` | Demo-mode picker: pulls `useProfiles`, renders each profile as a card with the avatar color circle + first-letter initial + name in a 2-column grid. `onClick` calls `useUserStore.setProfile(p)`. Shows `LoadingSplash` while loading. |
+| `auth-screen.tsx` | 3-tab RTL Tabs (login/signup/join). `LoginForm` = email + password. `SignupForm` = name + email + password + inner create-vs-join toggle (household name OR invite code, uppercase normalized). `JoinForm` = invite code + optional name. All use `useLogin`/`useSignup`/`useJoinHousehold` mutations with inline validation. Demo-mode fallback button at the bottom calls `setDemoMode(true)`. |
+| `install-prompt.tsx` | Listens for `beforeinstallprompt`, captures the `BeforeInstallPromptEvent` in state. Renders a gradient card with Smartphone icon + "نصب اپلیکیشن" + "نصب" button when `!installed && deferred && Date.now() >= suppressedUntil` (derived in render, not stored as state). Dismiss stores timestamp in `localStorage['hamkhaneh-install-dismissed-at']` and `suppressedUntil` is recomputed (7-day suppression via `computeSuppressedUntil()` lazy initializer). Standalone detection via `matchMedia('(display-mode: standalone)')` + iOS `navigator.standalone`. |
+| `add-item-sheet.tsx` | Vaul `Drawer` with: title `Input`, category `Select` (from `useCategories`, auto-picks first when loaded and no selection), and a 3-button tier picker using `useTierMeta` + `useFaDigits` (color dot + label + "N امتیاز"). Submits via `useCreateItem`, calls optional `onCreated` callback, closes drawer. |
+| `log-edit-dialog.tsx` | `Dialog` with: title `Input`, buyer `Select` from `useProfiles` (each item shows a colored dot + name), and the same 3-button tier picker. Submits via `useUpdateLog`. Local form state is synced from the incoming `log` prop in a `useEffect` whenever the dialog opens or the log changes (with `eslint-disable-next-line react-hooks/set-state-in-effect` since this is a legitimate controlled-to-uncontrolled sync). |
+| `app-header.tsx` | Sticky top header: brand (Home icon in primary/15 circle + "هم‌خانه‌یاب" + ` · ` + household name), `ConnectionDot` (Wifi/WifiOff pill using `useSyncStore.connected`), `RoleBadge` (ShieldCheck "مالک" for OWNER with primary color, Shield "ناظر" for MODERATOR with amber color, hidden for MEMBER). User `DropdownMenu` with avatar (color from store, falls back to useMe), display name, chevron down. Menu shows: user email label, household switcher (only when `households.length > 1` from `useMe`, with `RefreshCw`/`Check` indicators and `useSwitchHousehold`), profile switcher dialog trigger (`UserCog` icon), logout (`LogOut`, destructive, `useLogout`). `ProfileSwitcherDialog` is rendered inline and lets the user pick the active profile via `useUserStore.setProfile`. |
+| `app-shell.tsx` | Root shell: mounts `useRealtime()` once. **Effect 1** — mirrors `useMe` → `useUserStore.setSession` (writes user, household, role) and adopts the server's profile when the store has none; clears the store when the server says no session (and we're not in demo mode). Skipped entirely while `demoMode` is true. **Effect 2** — resets stale `activeProfile` whenever `household?.id` changes: if the active profile id isn't in the current `useProfiles` list, clears it; if there's no active profile but the list is non-empty, picks the one marked `isMe` (from `useMe`) or falls back to the first profile. Renders `LoadingSplash` when `!hydrated` or `meQuery.isLoading && !user && !demoMode`. Demo mode + no user → `UserPicker` + `BottomNav`. No user + not demo → `AuthScreen`. Logged in → `AppHeader` + `main` with `InstallPrompt` above a labelled placeholder `Card` (one per active tab; will be replaced by downstream agents with real view components) + `BottomNav`. Tab state via `useState<TabKey>('inventory')`. |
+
+## Infrastructure side-effect
+
+- Installed `socket.io-client` (was missing from `package.json` but already imported by `src/lib/realtime.ts`, which `app-shell.tsx` reaches via `use-realtime.ts`). Without it, `next dev` was emitting `Module not found: Can't resolve 'socket.io-client'` and the SSR pass was failing. After install, `next dev` compiles cleanly and `curl /` returns HTTP 200 with Persian UI text (`هم‌خانه‌یاب`).
+
+## Lint status
+
+- `bun run lint` → exits 0 with **no errors and no warnings**.
+- `bunx tsc --noEmit` → zero errors in any new `src/components/*` file. Only pre-existing unrelated errors remain (in `examples/`, `mini-services/sync-service/`, `skills/`).
+
+## Notes for downstream agents
+
+- **Tab views**: `app-shell.tsx` currently renders a labelled placeholder `Card` for whichever tab is active (look for `TAB_LABELS` and the `<Card>` inside the logged-in branch). To wire real views, replace that single Card with a `switch (tab)` that renders the appropriate view component. Each view should be a client component that reads from `useItems` / `useLogs` / `useBalance` / `useStats` / `useModerationQueue` etc.
+- **AddItemSheet usage**: the drawer is controlled (`open`, `onOpenChange`) and supports an optional `defaultCategoryId` (for adding an item inside a category) plus an `onCreated` callback. Inventory view should hold `open` in state and render `<AddItemSheet open={open} onOpenChange={setOpen} defaultCategoryId={...} />`.
+- **LogEditDialog usage**: render `<LogEditDialog log={selectedLog} open={!!selectedLog} onOpenChange={(v) => !v && setSelectedLog(null)} />`. The dialog syncs its form from `log` so it's safe to pass a changing log.
+- **Persian-friendly text**: all UI strings are inline Persian. Consider centralizing them into a `src/lib/i18n.ts` if more components need the same labels.
+- **Realtime**: `useRealtime()` is mounted in `app-shell.tsx`. Downstream view components should NOT also mount it — it's a singleton subscription.
+- **Role gating**: `tabs.ts` exports `hasMinRole(role, minRole)` which any view can import for additional role-gated UI (e.g. hide the "delete household" button from members).

@@ -1,0 +1,1508 @@
+     1→'use client'
+     2→
+     3→import { useMemo, useState } from 'react'
+     4→import {
+     5→  BarChart3,
+     6→  Calendar,
+     7→  ChevronLeft,
+     8→  Crown,
+     9→  Download,
+    10→  Package,
+    11→  ShoppingBag,
+    12→  TrendingUp,
+    13→} from 'lucide-react'
+    14→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+    15→import {
+    16→  Dialog,
+    17→  DialogContent,
+    18→  DialogDescription,
+    19→  DialogHeader,
+    20→  DialogTitle,
+    21→} from '@/components/ui/dialog'
+    22→import { Skeleton } from '@/components/ui/skeleton'
+    23→import { CategoryIcon } from '@/components/category-icon'
+    24→import { TierBadge } from '@/components/badges'
+    25→import {
+    26→  useBuyerStats,
+    27→  useCategoryStats,
+    28→  useStats,
+    29→  useTierStats,
+    30→} from '@/hooks/use-data'
+    31→import { useFaDigits } from '@/hooks/use-fa-digits'
+    32→import { useTierMeta } from '@/hooks/use-tier-meta'
+    33→import { formatRelativeFa } from '@/lib/jalali'
+    34→import type { PointTier } from '@/lib/types'
+    35→import { cn } from '@/lib/utils'
+    36→
+    37→/* ------------------------------- Constants -------------------------------- */
+    38→
+    39→type Range = 'all' | '3m' | '1m'
+    40→
+    41→const RANGE_OPTIONS: { key: Range; label: string }[] = [
+    42→  { key: '1m', label: 'ماه اخیر' },
+    43→  { key: '3m', label: '۳ ماه' },
+    44→  { key: 'all', label: 'همه' },
+    45→]
+    46→
+    47→const TIERS: PointTier[] = [1, 3, 5]
+    48→
+    49→const MEDAL_COLORS = ['#f59e0b', '#94a3b8', '#b45309'] // gold, silver, bronze
+    50→
+    51→/* ------------------------------- Helpers ---------------------------------- */
+    52→
+    53→function profileInitial(name: string): string {
+    54→  return name?.trim()?.[0] ?? '؟'
+    55→}
+    56→
+    57→function hexWithAlpha(hex: string, alpha: number): string {
+    58→  const a = Math.round(alpha * 255).toString(16).padStart(2, '0')
+    59→  return `${hex}${a}`
+    60→}
+    61→
+    62→/* ------------------------------ Small bits -------------------------------- */
+    63→
+    64→function SectionLabel({ children }: { children: React.ReactNode }) {
+    65→  return (
+    66→    <div className="text-muted-foreground px-1 text-xs font-medium">{children}</div>
+    67→  )
+    68→}
+    69→
+    70→function EmptyHint({ children }: { children: React.ReactNode }) {
+    71→  return (
+    72→    <div className="text-muted-foreground flex flex-col items-center gap-2 py-8 text-center text-sm">
+    73→      {children}
+    74→    </div>
+    75→  )
+    76→}
+    77→
+    78→function DialogSection({
+    79→  label,
+    80→  children,
+    81→}: {
+    82→  label: string
+    83→  children: React.ReactNode
+    84→}) {
+    85→  return (
+    86→    <section className="space-y-2">
+    87→      <SectionLabel>{label}</SectionLabel>
+    88→      {children}
+    89→    </section>
+    90→  )
+    91→}
+    92→
+    93→/* ----------------------------- Header card -------------------------------- */
+    94→
+    95→function HeaderCard({ range }: { range: Range }) {
+    96→  return (
+    97→    <Card className="border-0 overflow-hidden py-0">
+    98→      <div className="bg-gradient-to-bl from-emerald-500/15 via-emerald-500/10 to-amber-500/15 p-4">
+    99→        <div className="flex items-center gap-3">
+   100→          <span
+   101→            aria-hidden
+   102→            className="bg-emerald-500/20 text-emerald-700 flex size-11 shrink-0 items-center justify-center rounded-xl dark:text-emerald-300"
+   103→          >
+   104→            <BarChart3 className="size-5" />
+   105→          </span>
+   106→          <div className="flex min-w-0 flex-1 flex-col">
+   107→            <h2 className="text-lg font-bold leading-tight">آمار و تحلیل</h2>
+   108→            <p className="text-muted-foreground text-xs leading-tight">
+   109→              نمایی کلی از خریدها و امتیازهای هم‌خانه
+   110→            </p>
+   111→          </div>
+   112→          <a
+   113→            href={`/api/stats/export?range=${range}`}
+   114→            download
+   115→            className="hover:bg-accent text-muted-foreground hover:text-foreground flex size-9 items-center justify-center rounded-lg border transition-colors"
+   116→            aria-label="دانلود خروجی CSV"
+   117→            title="دانلود خروجی CSV"
+   118→          >
+   119→            <Download className="size-4" />
+   120→          </a>
+   121→        </div>
+   122→      </div>
+   123→    </Card>
+   124→  )
+   125→}
+   126→
+   127→/* --------------------------- Range segmented ------------------------------ */
+   128→
+   129→function RangeFilter({
+   130→  value,
+   131→  onChange,
+   132→}: {
+   133→  value: Range
+   134→  onChange: (r: Range) => void
+   135→}) {
+   136→  return (
+   137→    <div
+   138→      role="tablist"
+   139→      aria-label="بازه زمانی"
+   140→      className="bg-muted text-muted-foreground inline-flex w-full items-center gap-1 rounded-lg p-1 text-xs font-medium"
+   141→    >
+   142→      {RANGE_OPTIONS.map((opt) => {
+   143→        const active = value === opt.key
+   144→        return (
+   145→          <button
+   146→            key={opt.key}
+   147→            type="button"
+   148→            role="tab"
+   149→            aria-selected={active}
+   150→            onClick={() => onChange(opt.key)}
+   151→            className={cn(
+   152→              'flex-1 rounded-md px-2 py-1.5 text-center transition-colors',
+   153→              active
+   154→                ? 'bg-background text-foreground shadow-sm'
+   155→                : 'hover:text-foreground',
+   156→            )}
+   157→          >
+   158→            {opt.label}
+   159→          </button>
+   160→        )
+   161→      })}
+   162→    </div>
+   163→  )
+   164→}
+   165→
+   166→/* -------------------------------- KPI grid -------------------------------- */
+   167→
+   168→function KpiCard({
+   169→  icon,
+   170→  label,
+   171→  value,
+   172→  color,
+   173→}: {
+   174→  icon: React.ReactNode
+   175→  label: string
+   176→  value: string
+   177→  color: string
+   178→}) {
+   179→  return (
+   180→    <Card className="py-0">
+   181→      <CardContent className="flex flex-col gap-2 p-4">
+   182→        <span
+   183→          aria-hidden
+   184→          className="flex size-9 items-center justify-center rounded-lg"
+   185→          style={{ backgroundColor: hexWithAlpha(color, 0.12), color }}
+   186→        >
+   187→          {icon}
+   188→        </span>
+   189→        <div>
+   190→          <div className="text-2xl font-bold leading-none tabular-nums">{value}</div>
+   191→          <div className="text-muted-foreground mt-1 text-xs">{label}</div>
+   192→        </div>
+   193→      </CardContent>
+   194→    </Card>
+   195→  )
+   196→}
+   197→
+   198→function KpiGrid({
+   199→  totals,
+   200→}: {
+   201→  totals: {
+   202→    purchases: number
+   203→    points: number
+   204→    items: number
+   205→    activeDays: number
+   206→  }
+   207→}) {
+   208→  const fa = useFaDigits()
+   209→  return (
+   210→    <div className="grid grid-cols-2 gap-2">
+   211→      <KpiCard
+   212→        icon={<ShoppingBag className="size-4" />}
+   213→        label="کل خریدها"
+   214→        value={fa(totals.purchases)}
+   215→        color="#10b981"
+   216→      />
+   217→      <KpiCard
+   218→        icon={<TrendingUp className="size-4" />}
+   219→        label="کل امتیاز"
+   220→        value={fa(totals.points)}
+   221→        color="#f59e0b"
+   222→      />
+   223→      <KpiCard
+   224→        icon={<Package className="size-4" />}
+   225→        label="اقلام منحصر"
+   226→        value={fa(totals.items)}
+   227→        color="#6366f1"
+   228→      />
+   229→      <KpiCard
+   230→        icon={<Calendar className="size-4" />}
+   231→        label="روزهای فعال"
+   232→        value={fa(totals.activeDays)}
+   233→        color="#ec4899"
+   234→      />
+   235→    </div>
+   236→  )
+   237→}
+   238→
+   239→/* ------------------------------ Leader card ------------------------------- */
+   240→
+   241→function LeaderCard({
+   242→  leader,
+   243→  totalPoints,
+   244→}: {
+   245→  leader: { name: string; avatarColor: string; points: number } | null
+   246→  totalPoints: number
+   247→}) {
+   248→  const fa = useFaDigits()
+   249→  const pct = leader && totalPoints > 0 ? Math.round((leader.points / totalPoints) * 100) : 0
+   250→
+   251→  if (!leader) {
+   252→    return (
+   253→      <Card className="py-0">
+   254→        <CardContent className="flex items-center gap-3 p-4">
+   255→          <span
+   256→            aria-hidden
+   257→            className="bg-muted text-muted-foreground flex size-10 items-center justify-center rounded-xl"
+   258→          >
+   259→            <Crown className="size-5" />
+   260→          </span>
+   261→          <div className="flex min-w-0 flex-1 flex-col">
+   262→            <span className="text-sm font-medium">هنوز خریدی ثبت نشده</span>
+   263→            <span className="text-muted-foreground text-xs">
+   264→              لیدر با اولین خرید مشخص می‌شود
+   265→            </span>
+   266→          </div>
+   267→        </CardContent>
+   268→      </Card>
+   269→    )
+   270→  }
+   271→
+   272→  return (
+   273→    <Card className="border-amber-500/30 py-0">
+   274→      <CardContent className="flex items-center gap-3 p-4">
+   275→        <span
+   276→          aria-hidden
+   277→          className="bg-amber-500/15 text-amber-600 flex size-10 shrink-0 items-center justify-center rounded-xl dark:text-amber-400"
+   278→        >
+   279→          <Crown className="size-5" />
+   280→        </span>
+   281→        <div
+   282→          aria-hidden
+   283→          className="flex size-10 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white"
+   284→          style={{ backgroundColor: leader.avatarColor }}
+   285→        >
+   286→          {profileInitial(leader.name)}
+   287→        </div>
+   288→        <div className="flex min-w-0 flex-1 flex-col">
+   289→          <span className="truncate text-sm font-semibold">{leader.name}</span>
+   290→          <span className="text-muted-foreground text-xs tabular-nums">
+   291→            {fa(leader.points)} امتیاز · {fa(pct)}٪ از کل
+   292→          </span>
+   293→        </div>
+   294→      </CardContent>
+   295→    </Card>
+   296→  )
+   297→}
+   298→
+   299→/* ---------------------- Per-profile contribution -------------------------- */
+   300→
+   301→function ProfileContribution({
+   302→  profiles,
+   303→  totalPoints,
+   304→  onSelect,
+   305→}: {
+   306→  profiles: Array<{ id: string; name: string; avatarColor: string; count: number; points: number }>
+   307→  totalPoints: number
+   308→  onSelect: (id: string) => void
+   309→}) {
+   310→  const fa = useFaDigits()
+   311→  if (profiles.length === 0) return null
+   312→
+   313→  return (
+   314→    <div className="space-y-2">
+   315→      {profiles.map((p) => {
+   316→        const pct = totalPoints > 0 ? (p.points / totalPoints) * 100 : 0
+   317→        return (
+   318→          <button
+   319→            key={p.id}
+   320→            type="button"
+   321→            onClick={() => onSelect(p.id)}
+   322→            className="bg-card hover:bg-accent/40 flex w-full items-center gap-3 rounded-xl border p-3 text-right transition-colors"
+   323→          >
+   324→            <div
+   325→              aria-hidden
+   326→              className="flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
+   327→              style={{ backgroundColor: p.avatarColor }}
+   328→            >
+   329→              {profileInitial(p.name)}
+   330→            </div>
+   331→            <div className="flex min-w-0 flex-1 flex-col gap-1">
+   332→              <div className="flex items-baseline justify-between gap-2">
+   333→                <span className="truncate text-sm font-medium">{p.name}</span>
+   334→                <span className="text-muted-foreground text-xs tabular-nums">
+   335→                  {fa(p.count)} خرید · {fa(p.points)} امتیاز
+   336→                </span>
+   337→              </div>
+   338→              <div className="bg-muted h-1.5 w-full overflow-hidden rounded-full">
+   339→                <div
+   340→                  className="h-full rounded-full transition-all"
+   341→                  style={{ width: `${pct}%`, backgroundColor: p.avatarColor }}
+   342→                />
+   343→              </div>
+   344→            </div>
+   345→            <ChevronLeft className="text-muted-foreground size-4 shrink-0" aria-hidden />
+   346→          </button>
+   347→        )
+   348→      })}
+   349→    </div>
+   350→  )
+   351→}
+   352→
+   353→/* ----------------------------- Tier distribution -------------------------- */
+   354→
+   355→function TierDistribution({
+   356→  perTier,
+   357→  onSelect,
+   358→}: {
+   359→  perTier: Array<{ tier: number; count: number; points: number }>
+   360→  onSelect: (tier: PointTier) => void
+   361→}) {
+   362→  const fa = useFaDigits()
+   363→  const tierMeta = useTierMeta()
+   364→
+   365→  const byTier = new Map<number, { count: number; points: number }>(
+   366→    perTier.map((t) => [t.tier, { count: t.count, points: t.points }]),
+   367→  )
+   368→
+   369→  return (
+   370→    <div className="grid grid-cols-3 gap-2">
+   371→      {TIERS.map((t) => {
+   372→        const meta = tierMeta[t]
+   373→        const e = byTier.get(t) ?? { count: 0, points: 0 }
+   374→        const disabled = e.count === 0
+   375→        return (
+   376→          <button
+   377→            key={t}
+   378→            type="button"
+   379→            disabled={disabled}
+   380→            onClick={() => onSelect(t)}
+   381→            className={cn(
+   382→              'flex flex-col items-center gap-1 rounded-xl border p-3 text-center transition-all',
+   383→              disabled
+   384→                ? 'opacity-50'
+   385→                : 'hover:scale-[1.03] active:scale-[0.98] cursor-pointer',
+   386→            )}
+   387→            style={{
+   388→              borderColor: disabled ? undefined : hexWithAlpha(meta.color, 0.3),
+   389→              backgroundColor: disabled ? undefined : hexWithAlpha(meta.color, 0.06),
+   390→            }}
+   391→          >
+   392→            <span
+   393→              aria-hidden
+   394→              className="inline-block size-2 rounded-full"
+   395→              style={{ backgroundColor: meta.color }}
+   396→            />
+   397→            <span className="text-sm font-semibold">{meta.label}</span>
+   398→            <span
+   399→              className="text-lg font-bold tabular-nums"
+   400→              style={{ color: meta.color }}
+   401→            >
+   402→              {fa(e.count)}
+   403→            </span>
+   404→            <span className="text-muted-foreground text-[10px] tabular-nums">
+   405→              {fa(e.points)} امتیاز
+   406→            </span>
+   407→          </button>
+   408→        )
+   409→      })}
+   410→    </div>
+   411→  )
+   412→}
+   413→
+   414→/* ----------------------------- Category list ------------------------------ */
+   415→
+   416→function CategoryBreakdown({
+   417→  categories,
+   418→  maxPoints,
+   419→  onSelect,
+   420→}: {
+   421→  categories: Array<{ id: string; title: string; icon: string; count: number; points: number }>
+   422→  maxPoints: number
+   423→  onSelect: (id: string) => void
+   424→}) {
+   425→  const fa = useFaDigits()
+   426→  if (categories.length === 0) {
+   427→    return (
+   428→      <EmptyHint>
+   429→        <span>دسته‌ای برای نمایش وجود ندارد.</span>
+   430→      </EmptyHint>
+   431→    )
+   432→  }
+   433→
+   434→  return (
+   435→    <div className="space-y-2">
+   436→      {categories.map((c) => {
+   437→        const pct = maxPoints > 0 ? (c.points / maxPoints) * 100 : 0
+   438→        return (
+   439→          <button
+   440→            key={c.id || c.title}
+   441→            type="button"
+   442→            onClick={() => onSelect(c.id)}
+   443→            disabled={!c.id}
+   444→            className={cn(
+   445→              'bg-card flex w-full items-center gap-3 rounded-xl border p-3 text-right transition-colors',
+   446→              c.id ? 'hover:bg-accent/40 cursor-pointer' : 'cursor-default',
+   447→            )}
+   448→          >
+   449→            <span
+   450→              aria-hidden
+   451→              className="bg-muted flex size-9 shrink-0 items-center justify-center rounded-lg"
+   452→            >
+   453→              <CategoryIcon name={c.icon} size={18} />
+   454→            </span>
+   455→            <div className="flex min-w-0 flex-1 flex-col gap-1">
+   456→              <div className="flex items-baseline justify-between gap-2">
+   457→                <span className="truncate text-sm font-medium">{c.title}</span>
+   458→                <span className="text-muted-foreground text-xs tabular-nums">
+   459→                  {fa(c.count)} خرید · {fa(c.points)} امتیاز
+   460→                </span>
+   461→              </div>
+   462→              <div className="bg-muted h-1.5 w-full overflow-hidden rounded-full">
+   463→                <div
+   464→                  className="bg-primary h-full rounded-full transition-all"
+   465→                  style={{ width: `${pct}%` }}
+   466→                />
+   467→              </div>
+   468→            </div>
+   469→            {c.id && (
+   470→              <ChevronLeft className="text-muted-foreground size-4 shrink-0" aria-hidden />
+   471→            )}
+   472→          </button>
+   473→        )
+   474→      })}
+   475→    </div>
+   476→  )
+   477→}
+   478→
+   479→/* ----------------------------- Monthly trend ------------------------------ */
+   480→
+   481→function MonthlyTrend({
+   482→  data,
+   483→}: {
+   484→  data: Array<{ key: string; label: string; count: number; points: number }>
+   485→}) {
+   486→  const fa = useFaDigits()
+   487→  const W = 320
+   488→  const H = 140
+   489→  const PAD_X = 18
+   490→  const PAD_TOP = 12
+   491→  const PAD_BOTTOM = 28
+   492→  const plotW = W - PAD_X * 2
+   493→  const plotH = H - PAD_TOP - PAD_BOTTOM
+   494→
+   495→  const max = Math.max(1, ...data.map((d) => d.points))
+   496→  const min = 0
+   497→  const span = max - min || 1
+   498→  const n = data.length
+   499→
+   500→  const xAt = (i: number) => PAD_X + (n <= 1 ? plotW / 2 : (i * plotW) / (n - 1))
+   501→  const yAt = (v: number) => PAD_TOP + plotH - ((v - min) / span) * plotH
+   502→
+   503→  const linePath = data
+   504→    .map((d, i) => `${i === 0 ? 'M' : 'L'} ${xAt(i).toFixed(2)} ${yAt(d.points).toFixed(2)}`)
+   505→    .join(' ')
+   506→  const areaPath = `${linePath} L ${xAt(n - 1).toFixed(2)} ${PAD_TOP + plotH} L ${xAt(0).toFixed(2)} ${PAD_TOP + plotH} Z`
+   507→
+   508→  const gridLines = [0, 0.25, 0.5, 0.75, 1]
+   509→
+   510→  return (
+   511→    <Card className="py-0">
+   512→      <CardHeader className="pb-2">
+   513→        <CardTitle className="text-base">روند ماهانه</CardTitle>
+   514→      </CardHeader>
+   515→      <CardContent className="pb-3">
+   516→        <svg
+   517→          viewBox={`0 0 ${W} ${H}`}
+   518→          className="h-auto w-full"
+   519→          role="img"
+   520→          aria-label="نمودار روند ماهانه امتیازها"
+   521→          preserveAspectRatio="none"
+   522→        >
+   523→          <defs>
+   524→            <linearGradient id="insights-area" x1="0" y1="0" x2="0" y2="1">
+   525→              <stop offset="0%" stopColor="#10b981" stopOpacity="0.35" />
+   526→              <stop offset="100%" stopColor="#10b981" stopOpacity="0.02" />
+   527→            </linearGradient>
+   528→            <linearGradient id="insights-line" x1="0" y1="0" x2="1" y2="0">
+   529→              <stop offset="0%" stopColor="#10b981" />
+   530→              <stop offset="100%" stopColor="#f59e0b" />
+   531→            </linearGradient>
+   532→          </defs>
+   533→
+   534→          {/* Gridlines */}
+   535→          {gridLines.map((g, i) => {
+   536→            const y = PAD_TOP + plotH * g
+   537→            return (
+   538→              <line
+   539→                key={i}
+   540→                x1={PAD_X}
+   541→                y1={y}
+   542→                x2={W - PAD_X}
+   543→                y2={y}
+   544→                stroke="currentColor"
+   545→                strokeOpacity={0.08}
+   546→                strokeWidth={1}
+   547→              />
+   548→            )
+   549→          })}
+   550→
+   551→          {/* Area fill */}
+   552→          {data.length > 1 && <path d={areaPath} fill="url(#insights-area)" />}
+   553→          {/* Line */}
+   554→          {data.length > 0 && (
+   555→            <path
+   556→              d={linePath}
+   557→              fill="none"
+   558→              stroke="url(#insights-line)"
+   559→              strokeWidth={2}
+   560→              strokeLinejoin="round"
+   561→              strokeLinecap="round"
+   562→            />
+   563→          )}
+   564→
+   565→          {/* Data points */}
+   566→          {data.map((d, i) => (
+   567→            <g key={d.key}>
+   568→              <circle
+   569→                cx={xAt(i)}
+   570→                cy={yAt(d.points)}
+   571→                r={3.5}
+   572→                fill="#ffffff"
+   573→                stroke="#10b981"
+   574→                strokeWidth={2}
+   575→              />
+   576→              <text
+   577→                x={xAt(i)}
+   578→                y={H - 10}
+   579→                textAnchor="middle"
+   580→                className="fill-muted-foreground"
+   581→                style={{ fontSize: 10 }}
+   582→              >
+   583→                {d.label}
+   584→              </text>
+   585→            </g>
+   586→          ))}
+   587→        </svg>
+   588→        {data.every((d) => d.count === 0) && (
+   589→          <div className="text-muted-foreground mt-1 text-center text-xs">
+   590→            در این بازه خریدی ثبت نشده است.
+   591→          </div>
+   592→        )}
+   593→        <div className="text-muted-foreground mt-1 flex items-center justify-between px-1 text-xs tabular-nums">
+   594→          <span>بیشینه: {fa(max)} امتیاز</span>
+   595→          <span>۶ ماه اخیر</span>
+   596→        </div>
+   597→      </CardContent>
+   598→    </Card>
+   599→  )
+   600→}
+   601→
+   602→/* ----------------------------- Top items ---------------------------------- */
+   603→
+   604→function TopItems({
+   605→  items,
+   606→}: {
+   607→  items: Array<{ itemTitle: string; count: number; points: number; buyerName: string; buyerColor: string }>
+   608→}) {
+   609→  const fa = useFaDigits()
+   610→  if (items.length === 0) {
+   611→    return (
+   612→      <EmptyHint>
+   613→        <Package className="text-muted-foreground size-6" aria-hidden />
+   614→        <span>هنوز کالایی خرید نشده است.</span>
+   615→      </EmptyHint>
+   616→    )
+   617→  }
+   618→
+   619→  return (
+   620→    <ol className="space-y-2">
+   621→      {items.map((it, i) => {
+   622→        const medal = i < 3 ? MEDAL_COLORS[i] : null
+   623→        return (
+   624→          <li
+   625→            key={`${it.itemTitle}-${i}`}
+   626→            className="bg-card flex items-center gap-3 rounded-xl border p-3"
+   627→          >
+   628→            <span
+   629→              aria-hidden
+   630→              className="flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
+   631→              style={medal ? { backgroundColor: medal } : { backgroundColor: '#64748b' }}
+   632→            >
+   633→              {fa(i + 1)}
+   634→            </span>
+   635→            <div className="flex min-w-0 flex-1 flex-col">
+   636→              <span className="truncate text-sm font-medium leading-tight">{it.itemTitle}</span>
+   637→              <span className="text-muted-foreground text-xs tabular-nums leading-tight">
+   638→                {fa(it.count)} خرید · {fa(it.points)} امتیاز
+   639→              </span>
+   640→            </div>
+   641→            <div
+   642→              className="flex items-center gap-1.5"
+   643→              title={`آخرین خریدار: ${it.buyerName}`}
+   644→            >
+   645→              <span
+   646→                aria-hidden
+   647→                className="flex size-6 items-center justify-center rounded-full text-[10px] font-bold text-white"
+   648→                style={{ backgroundColor: it.buyerColor }}
+   649→              >
+   650→                {profileInitial(it.buyerName)}
+   651→              </span>
+   652→            </div>
+   653→          </li>
+   654→        )
+   655→      })}
+   656→    </ol>
+   657→  )
+   658→}
+   659→
+   660→/* ------------------------------ Skeletons --------------------------------- */
+   661→
+   662→function DrillSkeleton() {
+   663→  return (
+   664→    <div className="space-y-3">
+   665→      <Skeleton className="h-16 w-full" />
+   666→      <Skeleton className="h-24 w-full" />
+   667→      <Skeleton className="h-24 w-full" />
+   668→      <Skeleton className="h-24 w-full" />
+   669→    </div>
+   670→  )
+   671→}
+   672→
+   673→/* ------------------------ Per-buyer bars (shared) ------------------------- */
+   674→
+   675→function BuyerBars({
+   676→  buyers,
+   677→  totalPoints,
+   678→}: {
+   679→  buyers: Array<{ name: string; avatarColor: string; count: number; points: number }>
+   680→  totalPoints: number
+   681→}) {
+   682→  const fa = useFaDigits()
+   683→  if (buyers.length === 0) {
+   684→    return <EmptyHint><span>داده‌ای موجود نیست.</span></EmptyHint>
+   685→  }
+   686→  return (
+   687→    <div className="space-y-2.5">
+   688→      {buyers.map((b, i) => {
+   689→        const pct = totalPoints > 0 ? (b.points / totalPoints) * 100 : 0
+   690→        return (
+   691→          <div key={`${b.name}-${i}`} className="space-y-1">
+   692→            <div className="flex items-center gap-2">
+   693→              <span
+   694→                aria-hidden
+   695→                className="flex size-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
+   696→                style={{ backgroundColor: b.avatarColor }}
+   697→              >
+   698→                {profileInitial(b.name)}
+   699→              </span>
+   700→              <span className="truncate flex-1 text-sm font-medium">{b.name}</span>
+   701→              <span className="text-muted-foreground text-xs tabular-nums">
+   702→                {fa(b.count)} خرید · {fa(b.points)} امتیاز
+   703→              </span>
+   704→            </div>
+   705→            <div className="bg-muted h-2 w-full overflow-hidden rounded-full">
+   706→              <div
+   707→                className="h-full rounded-full transition-all"
+   708→                style={{ width: `${pct}%`, backgroundColor: b.avatarColor }}
+   709→              />
+   710→            </div>
+   711→          </div>
+   712→        )
+   713→      })}
+   714→    </div>
+   715→  )
+   716→}
+   717→
+   718→/* ------------------------- Per-category bars (buyer) ---------------------- */
+   719→
+   720→function CategoryBars({
+   721→  categories,
+   722→  totalPoints,
+   723→  color,
+   724→}: {
+   725→  categories: Array<{ id: string; title: string; icon: string; count: number; points: number }>
+   726→  totalPoints: number
+   727→  color: string
+   728→}) {
+   729→  const fa = useFaDigits()
+   730→  if (categories.length === 0) {
+   731→    return <EmptyHint><span>دسته‌ای ثبت نشده است.</span></EmptyHint>
+   732→  }
+   733→  return (
+   734→    <div className="space-y-2.5">
+   735→      {categories.map((c, i) => {
+   736→        const pct = totalPoints > 0 ? (c.points / totalPoints) * 100 : 0
+   737→        return (
+   738→          <div key={`${c.id || c.title}-${i}`} className="space-y-1">
+   739→            <div className="flex items-center gap-2">
+   740→              <span
+   741→                aria-hidden
+   742→                className="bg-muted flex size-6 shrink-0 items-center justify-center rounded-md"
+   743→              >
+   744→                <CategoryIcon name={c.icon} size={14} />
+   745→              </span>
+   746→              <span className="truncate flex-1 text-sm font-medium">{c.title}</span>
+   747→              <span className="text-muted-foreground text-xs tabular-nums">
+   748→                {fa(c.count)} · {fa(c.points)} امتیاز
+   749→              </span>
+   750→            </div>
+   751→            <div className="bg-muted h-2 w-full overflow-hidden rounded-full">
+   752→              <div
+   753→                className="h-full rounded-full transition-all"
+   754→                style={{ width: `${pct}%`, backgroundColor: color }}
+   755→              />
+   756→            </div>
+   757→          </div>
+   758→        )
+   759→      })}
+   760→    </div>
+   761→  )
+   762→}
+   763→
+   764→/* ------------------------ Per-tier colored cards -------------------------- */
+   765→
+   766→function TierCards({
+   767→  perTier,
+   768→}: {
+   769→  perTier: Array<{ tier: number; count: number; points: number }>
+   770→}) {
+   771→  const fa = useFaDigits()
+   772→  const tierMeta = useTierMeta()
+   773→  const byTier = new Map<number, { count: number; points: number }>(
+   774→    perTier.map((t) => [t.tier, { count: t.count, points: t.points }]),
+   775→  )
+   776→  return (
+   777→    <div className="grid grid-cols-3 gap-2">
+   778→      {TIERS.map((t) => {
+   779→        const meta = tierMeta[t]
+   780→        const e = byTier.get(t) ?? { count: 0, points: 0 }
+   781→        return (
+   782→          <div
+   783→            key={t}
+   784→            className="flex flex-col items-center gap-1 rounded-xl border p-2.5 text-center"
+   785→            style={{
+   786→              borderColor: hexWithAlpha(meta.color, 0.3),
+   787→              backgroundColor: hexWithAlpha(meta.color, 0.06),
+   788→            }}
+   789→          >
+   790→            <span className="text-xs font-medium">{meta.label}</span>
+   791→            <span
+   792→              className="text-base font-bold tabular-nums"
+   793→              style={{ color: meta.color }}
+   794→            >
+   795→              {fa(e.count)}
+   796→            </span>
+   797→            <span className="text-muted-foreground text-[10px] tabular-nums">
+   798→              {fa(e.points)} امتیاز
+   799→            </span>
+   800→          </div>
+   801→        )
+   802→      })}
+   803→    </div>
+   804→  )
+   805→}
+   806→
+   807→/* ----------------------- Recent logs (variants) -------------------------- */
+   808→
+   809→function RecentLogsCategory({
+   810→  logs,
+   811→}: {
+   812→  logs: Array<{ id: string; itemTitle: string; buyerName: string; buyerColor: string; pointTier: number; pointsAwarded: number; purchasedAt: string }>
+   813→}) {
+   814→  const fa = useFaDigits()
+   815→  if (logs.length === 0) {
+   816→    return <EmptyHint><span>خرید اخیری موجود نیست.</span></EmptyHint>
+   817→  }
+   818→  return (
+   819→    <ul className="space-y-2">
+   820→      {logs.map((l) => (
+   821→        <li key={l.id} className="flex items-center gap-2 text-sm">
+   822→          <span
+   823→            aria-hidden
+   824→            className="flex size-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
+   825→            style={{ backgroundColor: l.buyerColor }}
+   826→          >
+   827→            {profileInitial(l.buyerName)}
+   828→          </span>
+   829→          <span className="min-w-0 flex-1 truncate">{l.itemTitle}</span>
+   830→          <TierBadge tier={l.pointTier as PointTier} />
+   831→          <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+   832→            {formatRelativeFa(l.purchasedAt)}
+   833→          </span>
+   834→        </li>
+   835→      ))}
+   836→    </ul>
+   837→  )
+   838→}
+   839→
+   840→function RecentLogsBuyer({
+   841→  logs,
+   842→}: {
+   843→  logs: Array<{ id: string; itemTitle: string; pointTier: number; pointsAwarded: number; purchasedAt: string; categoryTitle: string | null }>
+   844→}) {
+   845→  const fa = useFaDigits()
+   846→  if (logs.length === 0) {
+   847→    return <EmptyHint><span>خرید اخیری موجود نیست.</span></EmptyHint>
+   848→  }
+   849→  return (
+   850→    <ul className="space-y-2">
+   851→      {logs.map((l) => (
+   852→        <li key={l.id} className="flex items-center gap-2 text-sm">
+   853→          <TierBadge tier={l.pointTier as PointTier} />
+   854→          <div className="min-w-0 flex-1">
+   855→            <div className="truncate font-medium leading-tight">{l.itemTitle}</div>
+   856→            {l.categoryTitle && (
+   857→              <div className="text-muted-foreground truncate text-xs leading-tight">
+   858→                {l.categoryTitle}
+   859→              </div>
+   860→            )}
+   861→          </div>
+   862→          <span className="bg-emerald-500/15 text-emerald-700 shrink-0 rounded-full px-1.5 py-0.5 text-xs font-medium tabular-nums dark:text-emerald-300">
+   863→            +{fa(l.pointsAwarded)}
+   864→          </span>
+   865→          <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+   866→            {formatRelativeFa(l.purchasedAt)}
+   867→          </span>
+   868→        </li>
+   869→      ))}
+   870→    </ul>
+   871→  )
+   872→}
+   873→
+   874→function RecentLogsTier({
+   875→  logs,
+   876→}: {
+   877→  logs: Array<{ id: string; itemTitle: string; buyerName: string; buyerColor: string; pointsAwarded: number; purchasedAt: string; categoryTitle: string | null }>
+   878→}) {
+   879→  const fa = useFaDigits()
+   880→  if (logs.length === 0) {
+   881→    return <EmptyHint><span>خرید اخیری موجود نیست.</span></EmptyHint>
+   882→  }
+   883→  return (
+   884→    <ul className="space-y-2">
+   885→      {logs.map((l) => (
+   886→        <li key={l.id} className="flex items-center gap-2 text-sm">
+   887→          <span
+   888→            aria-hidden
+   889→            className="flex size-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
+   890→            style={{ backgroundColor: l.buyerColor }}
+   891→          >
+   892→            {profileInitial(l.buyerName)}
+   893→          </span>
+   894→          <div className="min-w-0 flex-1">
+   895→            <div className="truncate font-medium leading-tight">{l.itemTitle}</div>
+   896→            {l.categoryTitle && (
+   897→              <div className="text-muted-foreground truncate text-xs leading-tight">
+   898→                {l.categoryTitle}
+   899→              </div>
+   900→            )}
+   901→          </div>
+   902→          <span className="bg-emerald-500/15 text-emerald-700 shrink-0 rounded-full px-1.5 py-0.5 text-xs font-medium tabular-nums dark:text-emerald-300">
+   903→            +{fa(l.pointsAwarded)}
+   904→          </span>
+   905→          <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+   906→            {formatRelativeFa(l.purchasedAt)}
+   907→          </span>
+   908→        </li>
+   909→      ))}
+   910→    </ul>
+   911→  )
+   912→}
+   913→
+   914→/* ------------------------- Ranked items (category) ----------------------- */
+   915→
+   916→function RankedItemsCategory({
+   917→  items,
+   918→}: {
+   919→  items: Array<{ itemTitle: string; count: number; points: number; lastBuyer: string | null; lastBuyerColor: string | null; lastAt: string | null }>
+   920→}) {
+   921→  const fa = useFaDigits()
+   922→  if (items.length === 0) {
+   923→    return <EmptyHint><span>کالایی در این دسته ثبت نشده.</span></EmptyHint>
+   924→  }
+   925→  return (
+   926→    <div className="max-h-64 space-y-2 overflow-y-auto scrollbar-thin pr-1">
+   927→      <ol className="space-y-2">
+   928→        {items.map((it, i) => (
+   929→          <li
+   930→            key={`${it.itemTitle}-${i}`}
+   931→            className="bg-card flex items-center gap-3 rounded-lg border p-2.5"
+   932→          >
+   933→            <span
+   934→              aria-hidden
+   935→              className="text-muted-foreground w-6 shrink-0 text-center text-xs font-bold tabular-nums"
+   936→            >
+   937→              {fa(i + 1)}
+   938→            </span>
+   939→            <div className="min-w-0 flex-1">
+   940→              <div className="truncate text-sm font-medium leading-tight">{it.itemTitle}</div>
+   941→              <div className="text-muted-foreground flex items-center gap-1.5 text-xs leading-tight">
+   942→                {it.lastBuyer && (
+   943→                  <>
+   944→                    <span
+   945→                      aria-hidden
+   946→                      className="inline-flex size-4 items-center justify-center rounded-full text-[9px] font-bold text-white"
+   947→                      style={{ backgroundColor: it.lastBuyerColor ?? '#6b7280' }}
+   948→                    >
+   949→                      {profileInitial(it.lastBuyer)}
+   950→                    </span>
+   951→                    <span className="truncate">{it.lastBuyer}</span>
+   952→                    {it.lastAt && (
+   953→                      <>
+   954→                        <span aria-hidden>·</span>
+   955→                        <span className="shrink-0 tabular-nums">
+   956→                          {formatRelativeFa(it.lastAt)}
+   957→                        </span>
+   958→                      </>
+   959→                    )}
+   960→                  </>
+   961→                )}
+   962→              </div>
+   963→            </div>
+   964→            <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+   965→              {fa(it.count)} ×
+   966→            </span>
+   967→          </li>
+   968→        ))}
+   969→      </ol>
+   970→    </div>
+   971→  )
+   972→}
+   973→
+   974→/* -------------------------- Top items (buyer) ----------------------------- */
+   975→
+   976→function TopItemsBuyer({
+   977→  items,
+   978→}: {
+   979→  items: Array<{ itemTitle: string; count: number; points: number; categoryTitle: string | null; lastAt: string | null }>
+   980→}) {
+   981→  const fa = useFaDigits()
+   982→  if (items.length === 0) {
+   983→    return <EmptyHint><span>کالایی ثبت نشده است.</span></EmptyHint>
+   984→  }
+   985→  return (
+   986→    <div className="max-h-64 space-y-2 overflow-y-auto scrollbar-thin pr-1">
+   987→      <ol className="space-y-2">
+   988→        {items.map((it, i) => (
+   989→          <li
+   990→            key={`${it.itemTitle}-${i}`}
+   991→            className="bg-card flex items-center gap-3 rounded-lg border p-2.5"
+   992→          >
+   993→            <span
+   994→              aria-hidden
+   995→              className="text-muted-foreground w-6 shrink-0 text-center text-xs font-bold tabular-nums"
+   996→            >
+   997→              {fa(i + 1)}
+   998→            </span>
+   999→            <div className="min-w-0 flex-1">
+  1000→              <div className="truncate text-sm font-medium leading-tight">{it.itemTitle}</div>
+  1001→              {it.categoryTitle && (
+  1002→                <div className="text-muted-foreground truncate text-xs leading-tight">
+  1003→                  {it.categoryTitle}
+  1004→                </div>
+  1005→              )}
+  1006→            </div>
+  1007→            <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+  1008→              {fa(it.count)} × · {fa(it.points)} امتیاز
+  1009→            </span>
+  1010→          </li>
+  1011→        ))}
+  1012→      </ol>
+  1013→    </div>
+  1014→  )
+  1015→}
+  1016→
+  1017→/* --------------------------- Top items (tier) ----------------------------- */
+  1018→
+  1019→function TopItemsTier({
+  1020→  items,
+  1021→}: {
+  1022→  items: Array<{ itemTitle: string; count: number; points: number; categoryTitle: string | null; lastBuyer: string | null; lastBuyerColor: string | null; lastAt: string | null }>
+  1023→}) {
+  1024→  const fa = useFaDigits()
+  1025→  if (items.length === 0) {
+  1026→    return <EmptyHint><span>کالایی در این تیر ثبت نشده.</span></EmptyHint>
+  1027→  }
+  1028→  return (
+  1029→    <div className="max-h-64 space-y-2 overflow-y-auto scrollbar-thin pr-1">
+  1030→      <ol className="space-y-2">
+  1031→        {items.map((it, i) => (
+  1032→          <li
+  1033→            key={`${it.itemTitle}-${i}`}
+  1034→            className="bg-card flex items-center gap-3 rounded-lg border p-2.5"
+  1035→          >
+  1036→            <span
+  1037→              aria-hidden
+  1038→              className="text-muted-foreground w-6 shrink-0 text-center text-xs font-bold tabular-nums"
+  1039→            >
+  1040→              {fa(i + 1)}
+  1041→            </span>
+  1042→            <div className="min-w-0 flex-1">
+  1043→              <div className="truncate text-sm font-medium leading-tight">{it.itemTitle}</div>
+  1044→              <div className="text-muted-foreground flex items-center gap-1.5 text-xs leading-tight">
+  1045→                {it.categoryTitle && <span className="truncate">{it.categoryTitle}</span>}
+  1046→                {it.lastBuyer && (
+  1047→                  <>
+  1048→                    <span aria-hidden>·</span>
+  1049→                    <span
+  1050→                      aria-hidden
+  1051→                      className="inline-flex size-4 items-center justify-center rounded-full text-[9px] font-bold text-white"
+  1052→                      style={{ backgroundColor: it.lastBuyerColor ?? '#6b7280' }}
+  1053→                    >
+  1054→                      {profileInitial(it.lastBuyer)}
+  1055→                    </span>
+  1056→                    {it.lastAt && (
+  1057→                      <span className="shrink-0 tabular-nums">
+  1058→                        {formatRelativeFa(it.lastAt)}
+  1059→                      </span>
+  1060→                    )}
+  1061→                  </>
+  1062→                )}
+  1063→              </div>
+  1064→            </div>
+  1065→            <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+  1066→              {fa(it.count)} ×
+  1067→            </span>
+  1068→          </li>
+  1069→        ))}
+  1070→      </ol>
+  1071→    </div>
+  1072→  )
+  1073→}
+  1074→
+  1075→/* --------------------- Per-category list (tier, scroll) -------------------- */
+  1076→
+  1077→function CategoryListTier({
+  1078→  categories,
+  1079→}: {
+  1080→  categories: Array<{ id: string; title: string; icon: string; count: number; points: number }>
+  1081→}) {
+  1082→  const fa = useFaDigits()
+  1083→  if (categories.length === 0) {
+  1084→    return <EmptyHint><span>دسته‌ای ثبت نشده است.</span></EmptyHint>
+  1085→  }
+  1086→  return (
+  1087→    <div className="max-h-64 space-y-2 overflow-y-auto scrollbar-thin pr-1">
+  1088→      <ul className="space-y-2">
+  1089→        {categories.map((c, i) => (
+  1090→          <li
+  1091→            key={`${c.id || c.title}-${i}`}
+  1092→            className="bg-card flex items-center gap-3 rounded-lg border p-2.5"
+  1093→          >
+  1094→            <span
+  1095→              aria-hidden
+  1096→              className="bg-muted flex size-8 shrink-0 items-center justify-center rounded-md"
+  1097→            >
+  1098→              <CategoryIcon name={c.icon} size={16} />
+  1099→            </span>
+  1100→            <span className="min-w-0 flex-1 truncate text-sm font-medium">{c.title}</span>
+  1101→            <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+  1102→              {fa(c.count)} خرید · {fa(c.points)} امتیاز
+  1103→            </span>
+  1104→          </li>
+  1105→        ))}
+  1106→      </ul>
+  1107→    </div>
+  1108→  )
+  1109→}
+  1110→
+  1111→/* ============================ Drill-down: Category ======================== */
+  1112→
+  1113→function CategoryDrillDownDialog({
+  1114→  open,
+  1115→  onOpenChange,
+  1116→  categoryId,
+  1117→  range,
+  1118→}: {
+  1119→  open: boolean
+  1120→  onOpenChange: (v: boolean) => void
+  1121→  categoryId: string | null
+  1122→  range: Range
+  1123→}) {
+  1124→  const fa = useFaDigits()
+  1125→  const query = useCategoryStats(categoryId, range)
+  1126→  const data = query.data
+  1127→
+  1128→  return (
+  1129→    <Dialog open={open} onOpenChange={onOpenChange}>
+  1130→      <DialogContent className="max-h-[85vh] max-w-md gap-4 overflow-y-auto p-5 scrollbar-thin sm:max-w-md">
+  1131→        <DialogHeader>
+  1132→          {data ? (
+  1133→            <div className="flex items-center gap-3">
+  1134→              <span
+  1135→                aria-hidden
+  1136→                className="bg-muted flex size-10 shrink-0 items-center justify-center rounded-xl"
+  1137→              >
+  1138→                <CategoryIcon name={data.category.icon} size={20} />
+  1139→              </span>
+  1140→              <div className="min-w-0">
+  1141→                <DialogTitle className="truncate text-base">{data.category.title}</DialogTitle>
+  1142→                <DialogDescription className="text-xs tabular-nums">
+  1143→                  {fa(data.totals.purchases)} خرید · {fa(data.totals.points)} امتیاز · {fa(data.totals.items)} کالا
+  1144→                </DialogDescription>
+  1145→              </div>
+  1146→            </div>
+  1147→          ) : (
+  1148→            <DialogTitle className="text-base">جزئیات دسته</DialogTitle>
+  1149→          )}
+  1150→        </DialogHeader>
+  1151→
+  1152→        {query.isLoading ? (
+  1153→          <DrillSkeleton />
+  1154→        ) : !data ? (
+  1155→          <EmptyHint>
+  1156→            <span>داده‌ای برای این دسته موجود نیست.</span>
+  1157→          </EmptyHint>
+  1158→        ) : data.totals.purchases === 0 ? (
+  1159→          <EmptyHint>
+  1160→            <Package className="text-muted-foreground size-6" aria-hidden />
+  1161→            <span>در این بازه خریدی در این دسته ثبت نشده است.</span>
+  1162→          </EmptyHint>
+  1163→        ) : (
+  1164→          <div className="space-y-4">
+  1165→            <DialogSection label="سهم هم‌خانه‌ها">
+  1166→              <BuyerBars buyers={data.perBuyer} totalPoints={data.totals.points} />
+  1167→            </DialogSection>
+  1168→
+  1169→            <DialogSection label="پرتکرارترین اقلام">
+  1170→              <RankedItemsCategory items={data.perItem} />
+  1171→            </DialogSection>
+  1172→
+  1173→            <DialogSection label="آخرین خریدها">
+  1174→              <RecentLogsCategory logs={data.recentLogs} />
+  1175→            </DialogSection>
+  1176→          </div>
+  1177→        )}
+  1178→      </DialogContent>
+  1179→    </Dialog>
+  1180→  )
+  1181→}
+  1182→
+  1183→/* ============================ Drill-down: Buyer =========================== */
+  1184→
+  1185→function BuyerDrillDownDialog({
+  1186→  open,
+  1187→  onOpenChange,
+  1188→  profileId,
+  1189→  range,
+  1190→}: {
+  1191→  open: boolean
+  1192→  onOpenChange: (v: boolean) => void
+  1193→  profileId: string | null
+  1194→  range: Range
+  1195→}) {
+  1196→  const fa = useFaDigits()
+  1197→  const query = useBuyerStats(profileId, range)
+  1198→  const data = query.data
+  1199→
+  1200→  return (
+  1201→    <Dialog open={open} onOpenChange={onOpenChange}>
+  1202→      <DialogContent className="max-h-[85vh] max-w-md gap-4 overflow-y-auto p-5 scrollbar-thin sm:max-w-md">
+  1203→        <DialogHeader>
+  1204→          {data ? (
+  1205→            <div className="flex items-center gap-3">
+  1206→              <span
+  1207→                aria-hidden
+  1208→                className="flex size-10 shrink-0 items-center justify-center rounded-full text-base font-bold text-white"
+  1209→                style={{ backgroundColor: data.profile.avatarColor }}
+  1210→              >
+  1211→                {profileInitial(data.profile.name)}
+  1212→              </span>
+  1213→              <div className="min-w-0">
+  1214→                <DialogTitle className="truncate text-base">{data.profile.name}</DialogTitle>
+  1215→                <DialogDescription className="text-xs tabular-nums">
+  1216→                  {fa(data.totals.purchases)} خرید · {fa(data.totals.points)} امتیاز · {fa(data.totals.categories)} دسته
+  1217→                </DialogDescription>
+  1218→              </div>
+  1219→            </div>
+  1220→          ) : (
+  1221→            <DialogTitle className="text-base">جزئیات هم‌خانه</DialogTitle>
+  1222→          )}
+  1223→        </DialogHeader>
+  1224→
+  1225→        {query.isLoading ? (
+  1226→          <DrillSkeleton />
+  1227→        ) : !data ? (
+  1228→          <EmptyHint>
+  1229→            <span>داده‌ای برای این هم‌خانه موجود نیست.</span>
+  1230→          </EmptyHint>
+  1231→        ) : data.totals.purchases === 0 ? (
+  1232→          <EmptyHint>
+  1233→            <ShoppingBag className="text-muted-foreground size-6" aria-hidden />
+  1234→            <span>در این بازه خریدی از این هم‌خانه ثبت نشده است.</span>
+  1235→          </EmptyHint>
+  1236→        ) : (
+  1237→          <div className="space-y-4">
+  1238→            <DialogSection label="دسته‌های خرید‌شده">
+  1239→              <CategoryBars
+  1240→                categories={data.perCategory}
+  1241→                totalPoints={data.totals.points}
+  1242→                color={data.profile.avatarColor}
+  1243→              />
+  1244→            </DialogSection>
+  1245→
+  1246→            <DialogSection label="توزیع تیرها">
+  1247→              <TierCards perTier={data.perTier} />
+  1248→            </DialogSection>
+  1249→
+  1250→            <DialogSection label="پرتکرارترین اقلام">
+  1251→              <TopItemsBuyer items={data.perItem} />
+  1252→            </DialogSection>
+  1253→
+  1254→            <DialogSection label="آخرین خریدها">
+  1255→              <RecentLogsBuyer logs={data.recentLogs} />
+  1256→            </DialogSection>
+  1257→          </div>
+  1258→        )}
+  1259→      </DialogContent>
+  1260→    </Dialog>
+  1261→  )
+  1262→}
+  1263→
+  1264→/* ============================= Drill-down: Tier =========================== */
+  1265→
+  1266→function TierDrillDownDialog({
+  1267→  open,
+  1268→  onOpenChange,
+  1269→  tier,
+  1270→  range,
+  1271→}: {
+  1272→  open: boolean
+  1273→  onOpenChange: (v: boolean) => void
+  1274→  tier: PointTier | null
+  1275→  range: Range
+  1276→}) {
+  1277→  const fa = useFaDigits()
+  1278→  const tierMeta = useTierMeta()
+  1279→  const query = useTierStats(tier, range)
+  1280→  const data = query.data
+  1281→
+  1282→  const tierLabel = tier != null ? tierMeta[tier].label : '—'
+  1283→  const tierColor = tier != null ? tierMeta[tier].color : '#64748b'
+  1284→
+  1285→  return (
+  1286→    <Dialog open={open} onOpenChange={onOpenChange}>
+  1287→      <DialogContent className="max-h-[85vh] max-w-md gap-4 overflow-y-auto p-5 scrollbar-thin sm:max-w-md">
+  1288→        <DialogHeader>
+  1289→          {data ? (
+  1290→            <div className="flex items-center gap-3">
+  1291→              <span
+  1292→                aria-hidden
+  1293→                className="flex size-10 shrink-0 items-center justify-center rounded-xl"
+  1294→                style={{ backgroundColor: hexWithAlpha(tierColor, 0.12), color: tierColor }}
+  1295→              >
+  1296→                <Crown className="size-5" />
+  1297→              </span>
+  1298→              <div className="min-w-0">
+  1299→                <DialogTitle className="truncate text-base">تیر {tierLabel}</DialogTitle>
+  1300→                <DialogDescription className="text-xs tabular-nums">
+  1301→                  {fa(data.totals.purchases)} خرید · {fa(data.totals.points)} امتیاز · {fa(data.totals.items)} کالا
+  1302→                </DialogDescription>
+  1303→              </div>
+  1304→            </div>
+  1305→          ) : (
+  1306→            <DialogTitle className="text-base">جزئیات تیر</DialogTitle>
+  1307→          )}
+  1308→        </DialogHeader>
+  1309→
+  1310→        {query.isLoading ? (
+  1311→          <DrillSkeleton />
+  1312→        ) : !data ? (
+  1313→          <EmptyHint>
+  1314→            <span>داده‌ای برای این تیر موجود نیست.</span>
+  1315→          </EmptyHint>
+  1316→        ) : data.totals.purchases === 0 ? (
+  1317→          <EmptyHint>
+  1318→            <Package className="text-muted-foreground size-6" aria-hidden />
+  1319→            <span>در این بازه خریدی در این تیر ثبت نشده است.</span>
+  1320→          </EmptyHint>
+  1321→        ) : (
+  1322→          <div className="space-y-4">
+  1323→            <DialogSection label="سهم هم‌خانه‌ها">
+  1324→              <BuyerBars buyers={data.perBuyer} totalPoints={data.totals.points} />
+  1325→            </DialogSection>
+  1326→
+  1327→            <DialogSection label="دسته‌های خرید‌شده">
+  1328→              <CategoryListTier categories={data.perCategory} />
+  1329→            </DialogSection>
+  1330→
+  1331→            <DialogSection label="پرتکرارترین اقلام">
+  1332→              <TopItemsTier items={data.perItem} />
+  1333→            </DialogSection>
+  1334→
+  1335→            <DialogSection label="آخرین خریدها">
+  1336→              <RecentLogsTier logs={data.recentLogs} />
+  1337→            </DialogSection>
+  1338→          </div>
+  1339→        )}
+  1340→      </DialogContent>
+  1341→    </Dialog>
+  1342→  )
+  1343→}
+  1344→
+  1345→/* ============================== Main view ================================= */
+  1346→
+  1347→export function InsightsView() {
+  1348→  const [range, setRange] = useState<Range>('all')
+  1349→  const [drillDownCat, setDrillDownCat] = useState<string | null>(null)
+  1350→  const [drillDownBuyer, setDrillDownBuyer] = useState<string | null>(null)
+  1351→  const [drillDownTier, setDrillDownTier] = useState<PointTier | null>(null)
+  1352→
+  1353→  const statsQuery = useStats(range)
+  1354→
+  1355→  const stats = statsQuery.data
+  1356→  const totalPoints = useMemo(
+  1357→    () => stats?.perProfile.reduce((s, p) => s + p.points, 0) ?? 0,
+  1358→    [stats?.perProfile],
+  1359→  )
+  1360→  const maxCategoryPoints = useMemo(
+  1361→    () => stats?.perCategory.reduce((m, c) => Math.max(m, c.points), 0) ?? 0,
+  1362→    [stats?.perCategory],
+  1363→  )
+  1364→  const leader = useMemo(() => {
+  1365→    if (!stats || stats.perProfile.length === 0) return null
+  1366→    return stats.perProfile[0]
+  1367→  }, [stats])
+  1368→
+  1369→  if (statsQuery.isLoading) {
+  1370→    return (
+  1371→      <div className="space-y-2">
+  1372→        <Skeleton className="h-16 w-full" />
+  1373→        <Skeleton className="h-9 w-full" />
+  1374→        <Skeleton className="h-24 w-full" />
+  1375→        <Skeleton className="h-24 w-full" />
+  1376→        <Skeleton className="h-40 w-full" />
+  1377→      </div>
+  1378→    )
+  1379→  }
+  1380→
+  1381→  if (!stats) {
+  1382→    return (
+  1383→      <Card className="py-6">
+  1384→        <CardContent className="flex flex-col items-center gap-3 py-2 text-center">
+  1385→          <span
+  1386→            aria-hidden
+  1387→            className="bg-muted text-muted-foreground flex size-14 items-center justify-center rounded-2xl"
+  1388→          >
+  1389→            <BarChart3 className="size-7" />
+  1390→          </span>
+  1391→          <div className="space-y-1">
+  1392→            <h3 className="text-base font-semibold">داده‌ای موجود نیست</h3>
+  1393→            <p className="text-muted-foreground text-sm">
+  1394→              هنوز خریدی ثبت نشده است.
+  1395→            </p>
+  1396→          </div>
+  1397→        </CardContent>
+  1398→      </Card>
+  1399→    )
+  1400→  }
+  1401→
+  1402→  const hasData = stats.totals.purchases > 0
+  1403→
+  1404→  return (
+  1405→    <div className="space-y-3">
+  1406→      <HeaderCard range={range} />
+  1407→
+  1408→      <RangeFilter value={range} onChange={setRange} />
+  1409→
+  1410→      <KpiGrid totals={stats.totals} />
+  1411→
+  1412→      <LeaderCard leader={leader} totalPoints={totalPoints} />
+  1413→
+  1414→      {hasData && (
+  1415→        <Card className="py-0">
+  1416→          <CardHeader className="pb-2">
+  1417→            <CardTitle className="text-base">سهم هم‌خانه‌ها</CardTitle>
+  1418→          </CardHeader>
+  1419→          <CardContent>
+  1420→            <ProfileContribution
+  1421→              profiles={stats.perProfile}
+  1422→              totalPoints={totalPoints}
+  1423→              onSelect={setDrillDownBuyer}
+  1424→            />
+  1425→          </CardContent>
+  1426→        </Card>
+  1427→      )}
+  1428→
+  1429→      <MonthlyTrend data={stats.monthlyTrend} />
+  1430→
+  1431→      {hasData && (
+  1432→        <Card className="py-0">
+  1433→          <CardHeader className="pb-2">
+  1434→            <CardTitle className="text-base">دسته‌های خرید‌شده</CardTitle>
+  1435→          </CardHeader>
+  1436→          <CardContent>
+  1437→            <CategoryBreakdown
+  1438→              categories={stats.perCategory}
+  1439→              maxPoints={maxCategoryPoints}
+  1440→              onSelect={setDrillDownCat}
+  1441→            />
+  1442→          </CardContent>
+  1443→        </Card>
+  1444→      )}
+  1445→
+  1446→      {hasData && (
+  1447→        <Card className="py-0">
+  1448→          <CardHeader className="pb-2">
+  1449→            <CardTitle className="text-base">توزیع تیرها</CardTitle>
+  1450→          </CardHeader>
+  1451→          <CardContent>
+  1452→            <TierDistribution perTier={stats.perTier} onSelect={setDrillDownTier} />
+  1453→          </CardContent>
+  1454→        </Card>
+  1455→      )}
+  1456→
+  1457→      {hasData && (
+  1458→        <Card className="py-0">
+  1459→          <CardHeader className="pb-2">
+  1460→            <CardTitle className="text-base">پرتکرارترین اقلام</CardTitle>
+  1461→          </CardHeader>
+  1462→          <CardContent>
+  1463→            <TopItems items={stats.topItems} />
+  1464→          </CardContent>
+  1465→        </Card>
+  1466→      )}
+  1467→
+  1468→      {!hasData && (
+  1469→        <Card className="py-6">
+  1470→          <CardContent className="flex flex-col items-center gap-3 py-2 text-center">
+  1471→            <span
+  1472→              aria-hidden
+  1473→              className="bg-muted text-muted-foreground flex size-14 items-center justify-center rounded-2xl"
+  1474→            >
+  1475→              <BarChart3 className="size-7" />
+  1476→            </span>
+  1477→            <div className="space-y-1">
+  1478→              <h3 className="text-base font-semibold">هنوز خریدی ثبت نشده</h3>
+  1479→              <p className="text-muted-foreground text-sm">
+  1480→                با ثبت اولین خرید، نمودارها و تحلیل‌ها ظاهر می‌شوند.
+  1481→              </p>
+  1482→            </div>
+  1483→          </CardContent>
+  1484→        </Card>
+  1485→      )}
+  1486→
+  1487→      <CategoryDrillDownDialog
+  1488→        open={!!drillDownCat}
+  1489→        onOpenChange={(v) => !v && setDrillDownCat(null)}
+  1490→        categoryId={drillDownCat}
+  1491→        range={range}
+  1492→      />
+  1493→      <BuyerDrillDownDialog
+  1494→        open={!!drillDownBuyer}
+  1495→        onOpenChange={(v) => !v && setDrillDownBuyer(null)}
+  1496→        profileId={drillDownBuyer}
+  1497→        range={range}
+  1498→      />
+  1499→      <TierDrillDownDialog
+  1500→        open={!!drillDownTier}
+  1501→        onOpenChange={(v) => !v && setDrillDownTier(null)}
+  1502→        tier={drillDownTier}
+  1503→        range={range}
+  1504→      />
+  1505→    </div>
+  1506→  )
+  1507→}
+  1508→

@@ -1,8 +1,5 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+// Prisma schema — Shared Household Shopping & Turn-Balancing PWA
+// SQLite datasource (local, offline-friendly).
 
 generator client {
   provider = "prisma-client-js"
@@ -13,20 +10,196 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+/// حساب کاربری (احراز هویت واقعی با ایمیل/گذرواژه)
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  name      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String    @id @default(cuid())
+  email        String    @unique
+  name         String
+  passwordHash String
+  avatarColor  String    @default("#0d9488")
+  avatarEmoji  String?
+  createdAt    DateTime  @default(now())
+  lastSeenAt   DateTime?
+
+  sessions          Session[]
+  memberships       Membership[]
+  profiles          Profile[]
+  ownedHouseholds   Household[] @relation("HouseholdOwner")
+  moderationActions ModerationAction[]
 }
 
-model Post {
-  id        String   @id @default(cuid())
-  title     String
-  content   String?
-  published Boolean  @default(false)
-  authorId  String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+/// خانه (گروه هم‌خانه‌ها)
+model Household {
+  id         String   @id @default(cuid())
+  name       String
+  ownerId    String
+  owner      User     @relation("HouseholdOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  inviteCode String   @unique
+  createdAt  DateTime @default(now())
+
+  members      Membership[]
+  profiles     Profile[]
+  purchaseLogs PurchaseLog[] @relation("HouseholdLogs")
+  categories   Category[]
+  items        Item[]
+  settings     HouseholdSetting?
+  flags        Flag[]
+}
+
+/// عضویت کاربر در خانه + نقش
+model Membership {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  householdId String
+  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  role        String   @default("MEMBER")
+  joinedAt    DateTime @default(now())
+
+  @@unique([userId, householdId])
+  @@index([householdId])
+}
+
+/// نشست احراز هویت (کوکی HttpOnly)
+model Session {
+  id               String   @id @default(cuid())
+  token            String   @unique
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activeHouseholdId String?
+  expiresAt        DateTime
+  createdAt        DateTime @default(now())
+
+  @@index([userId])
+}
+
+/// هم‌خانه (شخصیت درون خانه)
+model Profile {
+  id          String    @id @default(cuid())
+  userId      String?
+  user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  householdId String?
+  household   Household? @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  name        String
+  pin         String?
+  avatarColor String   @default("#0d9488")
+  avatarEmoji String?
+  createdAt   DateTime  @default(now())
+
+  itemsBought  Item[]       @relation("ItemBuyer")
+  purchaseLogs PurchaseLog[]
+  flagsRaised  Flag[]       @relation("FlagReporter")
+
+  @@index([householdId])
+  @@index([userId])
+}
+
+/// تنظیمات هر خانه
+model HouseholdSetting {
+  householdId String   @id
+  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  tierLabels  String?
+  autoApprove Boolean  @default(false)
+  theme       String   @default("system")
+  updatedAt   DateTime @updatedAt
+}
+
+/// دسته‌بندی اقلام مصرفی خانه
+model Category {
+  id          String   @id @default(cuid())
+  householdId String?
+  household   Household? @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  title       String
+  icon        String
+  sortOrder   Int      @default(0)
+
+  items Item[]
+
+  @@index([householdId])
+}
+
+/// کاتالوگ جامع اقلام مصرفی
+model Item {
+  id            String   @id @default(cuid())
+  householdId    String?
+  household     Household? @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  categoryId    String
+  category      Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  title         String
+  pointTier     Int      @default(1)
+  status        String   @default("in_stock")
+  lastBoughtAt  DateTime?
+  lastBoughtById String?
+  lastBoughtBy  Profile?  @relation("ItemBuyer", fields: [lastBoughtById], references: [id], onDelete: SetNull)
+  createdAt     DateTime @default(now())
+  purchaseLogs  PurchaseLog[]
+
+  @@index([status])
+  @@index([categoryId])
+  @@index([householdId])
+}
+
+/// لاگ خریدهای انجام‌شده
+model PurchaseLog {
+  id            String   @id @default(cuid())
+  householdId    String?
+  household     Household? @relation("HouseholdLogs", fields: [householdId], references: [id], onDelete: Cascade)
+  itemId        String?
+  item          Item?    @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  itemTitle     String
+  buyerId       String
+  buyer         Profile  @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+  pointTier     Int      @default(1)
+  pointsAwarded Int
+  purchasedAt   DateTime @default(now())
+  status        String   @default("approved")
+  deletedAt     DateTime?
+
+  flags          Flag[]
+  moderationActions ModerationAction[]
+
+  @@index([buyerId])
+  @@index([purchasedAt])
+  @@index([householdId])
+  @@index([status])
+}
+
+/// گزارش/اعتراض به یک خرید
+model Flag {
+  id            String   @id @default(cuid())
+  householdId   String
+  household     Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  purchaseLogId String
+  purchaseLog   PurchaseLog @relation(fields: [purchaseLogId], references: [id], onDelete: Cascade)
+  reporterId    String
+  reporter      Profile  @relation("FlagReporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  reason        String
+  status        String   @default("open")
+  createdAt     DateTime @default(now())
+  resolvedAt    DateTime?
+  resolvedById  String?
+
+  @@index([householdId])
+  @@index([purchaseLogId])
+}
+
+/// اقدام مدیریت (تأیید/رد/ویرایش/حذف/تبدیل نقش و غیره) — گزارش ممیزی
+model ModerationAction {
+  id            String   @id @default(cuid())
+  householdId   String
+  actionType    String
+  actorId       String
+  actor         User     @relation(fields: [actorId], references: [id], onDelete: Cascade)
+  targetType    String
+  targetId      String?
+  reason        String?
+  metadata      String?
+  createdAt     DateTime @default(now())
+
+  purchaseLogId String?
+  purchaseLog   PurchaseLog? @relation(fields: [purchaseLogId], references: [id], onDelete: SetNull)
+
+  @@index([householdId])
+  @@index([actorId])
+  @@index([createdAt])
 }
