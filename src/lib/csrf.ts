@@ -3,6 +3,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
+import crypto from 'crypto'
 
 export const CSRF_COOKIE_NAME = 'csrf_token'
 export const CSRF_HEADER_NAME = 'x-csrf-token'
@@ -11,7 +12,6 @@ export const CSRF_HEADER_NAME = 'x-csrf-token'
  * Generate a cryptographically secure CSRF token
  */
 export function generateCSRFToken(): string {
-  const crypto = require('crypto')
   return crypto.randomBytes(32).toString('hex')
 }
 
