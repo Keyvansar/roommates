@@ -17,9 +17,10 @@ const httpServer = createServer((req, res) => {
 })
 
 const io = new Server(httpServer, {
-  cors: { origin: '*', methods: ['GET', 'POST'] },
-  pingTimeout: 60000,
-  pingInterval: 25000,
+  cors: {
+    origin: "http://localhost:3000",
+    credentials: true
+  }
 })
 
 interface ChangePayload {

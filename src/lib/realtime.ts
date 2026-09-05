@@ -1,15 +1,18 @@
 'use client'
 
-import { io, type Socket } from 'socket.io-client'
+import { io, Socket } from 'socket.io-client'
 
-let socket: Socket | null = null
+let socket: Socket
 
-export function getSocket(): Socket {
+export function getSocket() {
   if (!socket) {
-    socket = io('/?XTransformPort=3003', {
-      transports: ['websocket', 'polling'],
-      reconnection: true, reconnectionAttempts: Infinity,
-      reconnectionDelay: 1000, reconnectionDelayMax: 5000, timeout: 10000,
+    // ✅ Connect to port 3003 in development, relative path in production
+    const url = typeof window !== 'undefined' && window.location.port === '3000'
+      ? 'http://localhost:3003'
+      : ''
+
+    socket = io(url, {
+      withCredentials: true, // ✅ MAGIC: Tells the browser it's safe to send cookies to port 3003!
     })
   }
   return socket
