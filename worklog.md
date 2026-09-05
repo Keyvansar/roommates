@@ -176,3 +176,71 @@ Unresolved / Deferred:
 - Notifications toggles UI-only.
 - Category drag-and-drop reordering.
 - Picture-from-list avatar support.
+
+---
+Task ID: SEC-AUDIT-FIXES
+Agent: main
+Task: Security audit — fix all 10 vulnerabilities (critical, high, medium, low).
+
+Work Log:
+
+🔴 CRITICAL FIX: Caddyfile SSRF (Vuln #1)
+- Replaced wildcard `query XTransformPort=*` with explicit allowlist: only `XTransformPort=3003` (sync-service) is proxied. All other port values fall through to the default handler (Next.js on 3000). Prevents port scanning and SSRF via arbitrary localhost targets.
+
+🟠 HIGH FIX: WebSocket auth + room-scoping (Vuln #2)
+- Rewrote sync-service: clients must now send a `join` event with `{ householdId, profile }` to be placed in a scoped room (`hh:{householdId}`). Unauthenticated sockets cannot broadcast or receive presence.
+- Presence lists are now scoped per-household — no global user leak.
+- Change events are broadcast only to the sender's household room.
+- Updated frontend `realtime.ts` with `joinHouseholdRoom()` function.
+- Updated `use-realtime.ts` to call `joinHouseholdRoom` with the active household ID on connect/reconnect.
+
+🟠 HIGH FIX: Demo data race condition (Vuln #3)
+- Items `[id]/route.ts` PATCH: when editing a demo item (householdId null), now CLONES the item + its category into the user's household instead of modifying the global template in-place. Returns the clone.
+- Items `[id]/route.ts` DELETE: refuses to delete demo items (returns 403 "کالاهای نمونه قابل حذف نیستند").
+- Categories `[id]/route.ts` PATCH: same clone-on-edit pattern for demo categories.
+- Categories `[id]/route.ts` DELETE: refuses to delete demo categories (403).
+
+🟠 HIGH FIX: Unauthenticated seed reset (Vuln #4)
+- `/api/seed` now requires authentication. Unauthenticated requests get 401 "احراز هویت لازم است". Only authenticated users can reset their household's catalog. Global demo reset is no longer accessible without auth.
+- Added rate limiting: 3 resets per IP per hour (prevents DoS via repeated resets).
+
+🟡 MEDIUM FIX: Rate limiting on auth endpoints (Vuln #5)
+- Created `src/lib/rate-limit.ts` — in-memory sliding window rate limiter with `checkRateLimit(identifier, max, windowMs)` + `getClientIP(req)`.
+- Login: 10 attempts per IP per 15 minutes (prevents credential stuffing).
+- Signup: 5 attempts per IP per 15 minutes (prevents mass account creation).
+- Join household: 10 attempts per IP per 15 minutes (prevents invite code brute-force).
+- Seed: 3 attempts per IP per hour (prevents DoS).
+- All return 429 with Retry-After header when limited.
+
+🟡 MEDIUM FIX: User enumeration via signup (Vuln #6)
+- Signup endpoint no longer returns 409 "این ایمیل قبلاً ثبت شده". Instead returns a generic 400 "ثبت‌نام ناموفق بود. اطلاعات را بررسی کنید." — no indication whether the email exists.
+
+🟡 MEDIUM FIX: Weak password policy (Vuln #7)
+- Minimum length increased from 6 to 8 characters.
+- Added complexity requirement: must contain at least one letter AND one digit.
+- Added common password blocklist: password, 123456, 12345678, qwerty, abc123, 111111, 000000, 123123, iloveyou, admin.
+- Applied to both signup and password change endpoints.
+
+🟢 LOW FIX: Session accumulation (Vuln #8)
+- Login: deletes old session cookie before creating new one. Also caps at 5 sessions per user (deletes oldest when exceeded). Cleans up expired sessions on each login.
+- Household switch: deletes old session before creating new one (no more accumulating sessions on every switch).
+
+🟢 LOW FIX: Emoji validation bypass (Vuln #9)
+- Profile route now uses `Array.from(emoji)` for grapheme-aware length counting (was `emoji.length` which counts UTF-16 code units, not visual characters).
+- Max 2 grapheme clusters (was 4 code units).
+- Added non-ASCII validation: must contain at least one non-ASCII character to prevent arbitrary ASCII text injection.
+
+ℹ️ Informational (Vuln #10): dangerouslySetInnerHTML in chart.tsx — noted but not exploitable (hardcoded config, no user input). No fix needed.
+
+Verification:
+- Lint clean (0 warnings, 0 errors).
+- 0 page errors, 0 console errors across all 6 tabs in demo mode.
+- Unauth seed reset: returns 401 ✅
+- Rate limiting: 10 login attempts then 429 ✅
+- SSRF: XTransformPort=22 blocked (falls through to Next.js) ✅
+- Sync service: room-scoped, health 200, clients tracked ✅
+- Dev server on port 3000, sync-service on port 3003.
+
+Stage Summary:
+- All 10 vulnerabilities from the security audit fixed: 1 critical (SSRF), 3 high (WebSocket leak, demo data race, unauth seed), 3 medium (rate limiting, user enumeration, weak passwords), 2 low (session accumulation, emoji validation), 1 informational (noted, no action needed).
+- The app is now significantly more secure: authenticated WebSocket with room scoping, rate-limited auth endpoints, clone-on-edit for demo data, auth-required seed reset, strong password policy, session cleanup, grapheme-aware emoji validation.

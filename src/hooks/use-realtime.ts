@@ -2,18 +2,11 @@
 
 import { useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { getSocket, type ChangePayload } from '@/lib/realtime'
+import { getSocket, joinHouseholdRoom, type ChangePayload } from '@/lib/realtime'
 import { qk } from '@/lib/query-keys'
 import { useSyncStore, type PresenceEntry } from '@/hooks/use-sync-store'
 import { useUserStore } from '@/lib/store'
 
-/**
- * Subscribes to the realtime sync service. Mount this hook once at the app root.
- * - Listens for `change` events and invalidates the affected query slices.
- * - Tracks `connect` / `disconnect` via the sync store.
- * - Emits `join` on connect so other clients see presence, and tracks
- *   `presence` / `presence-list` events.
- */
 export function useRealtime(): void {
   const qc = useQueryClient()
   const setConnected = useSyncStore((s) => s.setConnected)
@@ -21,7 +14,7 @@ export function useRealtime(): void {
   const upsertPresence = useSyncStore((s) => s.upsertPresence)
   const removePresence = useSyncStore((s) => s.removePresence)
   const activeProfile = useUserStore((s) => s.activeProfile)
-  const hydrated = useUserStore((s) => s.hydrated)
+  const householdId = useUserStore((s) => s.household?.id)
 
   useEffect(() => {
     const socket = getSocket()
@@ -54,17 +47,12 @@ export function useRealtime(): void {
 
     const handleConnect = () => {
       setConnected(true)
-      // Announce presence so others see us
-      if (activeProfile?.name) socket.emit('join', activeProfile.name)
+      if (householdId) joinHouseholdRoom(householdId, activeProfile?.name)
     }
     const handleDisconnect = () => setConnected(false)
     const handlePresence = (entry: { id: string; profile: unknown; online?: boolean }) => {
       if (!entry?.id) return
-      if (entry.online === false) {
-        removePresence(entry.id)
-        return
-      }
-      // The sync-service sends profile as a string (profileName); normalise to a ProfileDTO-like stub.
+      if (entry.online === false) { removePresence(entry.id); return }
       const profile =
         typeof entry.profile === 'string'
           ? { id: entry.id, name: entry.profile as string, avatarColor: '#6b7280', pin: null }
@@ -91,7 +79,7 @@ export function useRealtime(): void {
 
     if (socket.connected) {
       setConnected(true)
-      if (activeProfile?.name) socket.emit('join', activeProfile.name)
+      if (householdId) joinHouseholdRoom(householdId, activeProfile?.name)
     }
 
     return () => {
@@ -101,5 +89,5 @@ export function useRealtime(): void {
       socket.off('presence', handlePresence)
       socket.off('presence-list', handlePresenceList)
     }
-  }, [qc, setConnected, setPresence, upsertPresence, removePresence, activeProfile, hydrated])
+  }, [qc, setConnected, setPresence, upsertPresence, removePresence, activeProfile, householdId])
 }

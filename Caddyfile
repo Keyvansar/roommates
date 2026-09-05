@@ -1,23 +1,27 @@
 :81 {
-	@transform_port_query {
-		query XTransformPort=*
-	}
+        # Only allow proxying to known internal service ports (3003 = sync-service).
+        # This prevents SSRF attacks where an attacker could scan arbitrary localhost
+        # ports by passing ?XTransformPort=XXXX. We use an explicit allowlist instead
+        # of the wildcard query match.
+        @sync_service_port {
+                query XTransformPort=3003
+        }
 
-	handle @transform_port_query {
-		reverse_proxy localhost:{query.XTransformPort} {
-			header_up Host {host}
-			header_up X-Forwarded-For {remote_host}
-			header_up X-Forwarded-Proto {scheme}
-			header_up X-Real-IP {remote_host}
-		}
-	}
+        handle @sync_service_port {
+                reverse_proxy localhost:3003 {
+                        header_up Host {host}
+                        header_up X-Forwarded-For {remote_host}
+                        header_up X-Forwarded-Proto {scheme}
+                        header_up X-Real-IP {remote_host}
+                }
+        }
 
-	handle {
-		reverse_proxy localhost:3000 {
-			header_up Host {host}
-			header_up X-Forwarded-For {remote_host}
-			header_up X-Forwarded-Proto {scheme}
-			header_up X-Real-IP {remote_host}
-		}
-	}
+        handle {
+                reverse_proxy localhost:3000 {
+                        header_up Host {host}
+                        header_up X-Forwarded-For {remote_host}
+                        header_up X-Forwarded-Proto {scheme}
+                        header_up X-Real-IP {remote_host}
+                }
+        }
 }

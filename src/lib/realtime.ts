@@ -23,6 +23,17 @@ export interface ChangePayload {
   at: string
 }
 
+/** Join a household room so broadcasts are scoped — required before broadcasting. */
+export function joinHouseholdRoom(householdId: string, profile?: string) {
+  try {
+    const s = getSocket()
+    const doJoin = () => s.emit('join', { householdId, profile })
+    if (s.connected) doJoin()
+    else s.once('connect', doJoin)
+  } catch { /* non-fatal */ }
+}
+
+/** Broadcast a change notification scoped to the current household room. */
 export function broadcastChange(payload: Omit<ChangePayload, 'at'>) {
   try {
     const s = getSocket()

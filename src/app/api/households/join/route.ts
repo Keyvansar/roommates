@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getCurrentUser, ensureProfileForUser, createSession, setSessionCookie } from '@/lib/auth'
+import { checkRateLimit, getClientIP } from '@/lib/rate-limit'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,6 +13,16 @@ interface JoinBody {
 }
 
 export async function POST(req: NextRequest) {
+  // Rate limit: 10 join attempts per IP per 15 minutes (prevents invite code brute-force)
+  const ip = getClientIP(req)
+  const rl = checkRateLimit(`join:${ip}`, 10, 15 * 60 * 1000)
+  if (rl.limited) {
+    return NextResponse.json(
+      { error: 'تلاش‌های زیادی انجام شده. بعداً دوباره تلاش کنید.' },
+      { status: 429, headers: { 'Retry-After': String(Math.ceil((rl.resetAt - Date.now()) / 1000)) } }
+    )
+  }
+
   const ctx = await getCurrentUser()
   if (!ctx) return NextResponse.json({ error: 'برای پیوستن به خانه باید وارد شوید' }, { status: 401 })
 

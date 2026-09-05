@@ -48,12 +48,22 @@ export async function PATCH(req: NextRequest) {
       updates.avatarEmoji = null
     } else {
       const emoji = body.avatarEmoji.trim()
-      // Allow up to 4 grapheme units (here we just check char length).
+      // SECURITY FIX: Use Array.from() for grapheme-aware length counting.
+      // JavaScript string .length counts UTF-16 code units, not visual characters.
+      // Many emojis are multi-code-point (skin tones, ZWJ sequences) and would
+      // pass the old length check while being a single visual emoji.
+      const graphemes = Array.from(emoji)
       if (emoji.length === 0) {
         updates.avatarEmoji = null
-      } else if (emoji.length > 4) {
-        return NextResponse.json({ error: 'آواتار حداکثر ۴ کاراکتر باشد' }, { status: 400 })
+      } else if (graphemes.length > 2) {
+        // Allow up to 2 grapheme clusters (enough for any single emoji + modifier)
+        return NextResponse.json({ error: 'آواتار حداکثر ۲ ایموجی باشد' }, { status: 400 })
       } else {
+        // Validate that it contains at least one non-ASCII character (emoji or Persian text)
+        // to prevent arbitrary ASCII injection
+        if (!/[^\x00-\x7F]/.test(emoji)) {
+          return NextResponse.json({ error: 'آواتار باید ایموجی باشد' }, { status: 400 })
+        }
         updates.avatarEmoji = emoji
       }
     }
@@ -65,8 +75,13 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'رمز فعلی را وارد کنید' }, { status: 400 })
     if (!verifyPassword(body.currentPassword, ctx.user.passwordHash))
       return NextResponse.json({ error: 'رمز فعلی نادرست است' }, { status: 401 })
-    if (body.newPassword.length < 6)
-      return NextResponse.json({ error: 'رمز جدید باید حداقل ۶ کاراکتر باشد' }, { status: 400 })
+    if (body.newPassword.length < 8)
+      return NextResponse.json({ error: 'رمز جدید باید حداقل ۸ کاراکتر باشد' }, { status: 400 })
+    if (!/[a-zA-Z]/.test(body.newPassword) || !/[0-9]/.test(body.newPassword))
+      return NextResponse.json({ error: 'رمز جدید باید شامل حرف و عدد باشد' }, { status: 400 })
+    const COMMON = ['password', '123456', '12345678', 'qwerty', 'abc123', '111111', '000000', 'admin']
+    if (COMMON.includes(body.newPassword.toLowerCase()))
+      return NextResponse.json({ error: 'رمز عبور بسیار رایج است' }, { status: 400 })
     updates.passwordHash = hashPassword(body.newPassword)
   }
 

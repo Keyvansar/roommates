@@ -41,36 +41,50 @@ export async function PATCH(
       return NextResponse.json({ error: 'این کالا متعلق به خانه شما نیست' }, { status: 403 })
   }
 
-  // Auto-attach demo item to the active household (clone the category too
-  // if it's still a demo category) so edits don't leak across households.
-  let householdId = item.householdId
-  let categoryId = item.categoryId
-  if (item.householdId === null && ctx.household) {
-    householdId = ctx.household.id
-    // Re-parent the item to a household-bound clone of its demo category.
-    const category = await db.category.findUnique({ where: { id: item.categoryId } })
-    if (category && category.householdId === null) {
-      const existing = await db.category.findFirst({
-        where: { householdId: ctx.household.id, title: category.title, icon: category.icon },
-        select: { id: true },
-      })
-      if (existing) {
-        categoryId = existing.id
-      } else {
-        const cloned = await db.category.create({
-          data: {
-            householdId: ctx.household.id,
-            title: category.title,
-            icon: category.icon,
-            sortOrder: category.sortOrder,
-          },
+    // SECURITY FIX: Never modify global demo items in-place. Instead, clone the
+    // item (and its category if also demo) into the user's household scope, then
+    // apply the update to the clone. This prevents the first editor from "stealing"
+    // a shared template from all other demo users.
+    if (item.householdId === null && ctx.household) {
+      // Clone the demo item into the household
+      const category = await db.category.findUnique({ where: { id: item.categoryId } })
+      let clonedCategoryId = item.categoryId
+      if (category && category.householdId === null) {
+        // Clone the category too if it's still a demo category
+        const existing = await db.category.findFirst({
+          where: { householdId: ctx.household.id, title: category.title, icon: category.icon },
+          select: { id: true },
         })
-        categoryId = cloned.id
+        if (existing) {
+          clonedCategoryId = existing.id
+        } else {
+          const clonedCat = await db.category.create({
+            data: { householdId: ctx.household.id, title: category.title, icon: category.icon, sortOrder: category.sortOrder },
+          })
+          clonedCategoryId = clonedCat.id
+        }
       }
+      // Create a clone of the item with the update applied
+      const cloned = await db.item.create({
+        data: {
+          householdId: ctx.household.id,
+          categoryId: clonedCategoryId,
+          title: body.title?.trim() || item.title,
+          pointTier: body.pointTier !== undefined ? body.pointTier : item.pointTier,
+          status: body.status !== undefined ? body.status : item.status,
+        },
+        include: { category: { select: { title: true, icon: true } }, lastBoughtBy: { select: { name: true, avatarColor: true } } },
+      })
+      return NextResponse.json({ item: await serializeItem({
+        id: cloned.id, title: cloned.title, pointTier: cloned.pointTier, status: cloned.status,
+        categoryId: cloned.categoryId, category: cloned.category,
+        lastBoughtAt: cloned.lastBoughtAt, lastBoughtById: cloned.lastBoughtById,
+        lastBoughtBy: cloned.lastBoughtBy,
+      }) })
     }
-  }
 
-  const updates: { status?: ItemStatus; pointTier?: PointTier; title?: string; householdId?: string | null; categoryId?: string } = {}
+  // Normal update for items already owned by the household
+  const updates: { status?: ItemStatus; pointTier?: PointTier; title?: string } = {}
   if (body.status !== undefined) {
     if (!VALID_STATUSES.includes(body.status))
       return NextResponse.json({ error: 'وضعیت نامعتبر است' }, { status: 400 })
@@ -86,8 +100,6 @@ export async function PATCH(
     if (!t) return NextResponse.json({ error: 'نام کالا نمی‌تواند خالی باشد' }, { status: 400 })
     updates.title = t
   }
-  if (householdId !== item.householdId) updates.householdId = householdId
-  if (categoryId !== item.categoryId) updates.categoryId = categoryId
 
   const updated = await db.item.update({
     where: { id },
@@ -124,10 +136,14 @@ export async function DELETE(
   const item = await db.item.findUnique({ where: { id } })
   if (!item) return NextResponse.json({ error: 'کالا یافت نشد' }, { status: 404 })
 
-  if (item.householdId !== null) {
-    if (!ctx.household || item.householdId !== ctx.household.id)
-      return NextResponse.json({ error: 'این کالا متعلق به خانه شما نیست' }, { status: 403 })
+  // SECURITY FIX: Never delete global demo items — they're shared templates.
+  // Only allow deleting items owned by the user's household.
+  if (item.householdId === null) {
+    return NextResponse.json({ error: 'کالاهای نمونه قابل حذف نیستند' }, { status: 403 })
   }
+
+  if (!ctx.household || item.householdId !== ctx.household.id)
+    return NextResponse.json({ error: 'این کالا متعلق به خانه شما نیست' }, { status: 403 })
 
   await db.item.delete({ where: { id } })
   return NextResponse.json({ ok: true })

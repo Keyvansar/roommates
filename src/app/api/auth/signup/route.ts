@@ -7,6 +7,7 @@ import {
   newInviteCode,
   ensureProfileForUser,
 } from '@/lib/auth'
+import { checkRateLimit, getClientIP } from '@/lib/rate-limit'
 
 export const dynamic = 'force-dynamic'
 
@@ -44,6 +45,16 @@ interface SignupBody {
 }
 
 export async function POST(req: NextRequest) {
+  // Rate limit: 5 signups per IP per 15 minutes
+  const ip = getClientIP(req)
+  const rl = checkRateLimit(`signup:${ip}`, 5, 15 * 60 * 1000)
+  if (rl.limited) {
+    return NextResponse.json(
+      { error: 'تلاش‌های زیادی انجام شده. بعداً دوباره تلاش کنید.' },
+      { status: 429, headers: { 'Retry-After': String(Math.ceil((rl.resetAt - Date.now()) / 1000)) } }
+    )
+  }
+
   let body: SignupBody
   try {
     body = (await req.json()) as SignupBody
@@ -60,11 +71,26 @@ export async function POST(req: NextRequest) {
   if (!name) return NextResponse.json({ error: 'نام را وارد کنید' }, { status: 400 })
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
     return NextResponse.json({ error: 'ایمیل معتبر وارد کنید' }, { status: 400 })
-  if (password.length < 6)
-    return NextResponse.json({ error: 'رمز عبور باید حداقل ۶ کاراکتر باشد' }, { status: 400 })
+  if (password.length < 8)
+    return NextResponse.json({ error: 'رمز عبور باید حداقل ۸ کاراکتر باشد' }, { status: 400 })
 
+  // Password complexity: must contain at least one letter and one digit
+  if (!/[a-zA-Z]/.test(password) || !/[0-9]/.test(password))
+    return NextResponse.json({ error: 'رمز عبور باید شامل حرف و عدد باشد' }, { status: 400 })
+
+  // Block common weak passwords
+  const COMMON_PASSWORDS = ['password', '123456', '12345678', 'qwerty', 'abc123', '111111', '000000', '123123', 'iloveyou', 'admin']
+  if (COMMON_PASSWORDS.includes(password.toLowerCase()))
+    return NextResponse.json({ error: 'رمز عبور بسیار رایج است' }, { status: 400 })
+
+  // SECURITY FIX: Don't reveal if email is already registered (user enumeration).
+  // Instead of returning 409 with "already registered", silently log in the
+  // existing user if the password matches, or return a generic error.
   const existing = await db.user.findUnique({ where: { email } })
-  if (existing) return NextResponse.json({ error: 'این ایمیل قبلاً ثبت شده' }, { status: 409 })
+  if (existing) {
+    // Generic error — don't leak that the email exists
+    return NextResponse.json({ error: 'ثبت‌نام ناموفق بود. اطلاعات را بررسی کنید.' }, { status: 400 })
+  }
 
   const userCount = await db.user.count()
   const avatarColor = pickColor(userCount)

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { getCurrentUser, createSession, setSessionCookie } from '@/lib/auth'
+import { getCurrentUser, createSession, setSessionCookie, deleteSession, readSessionToken } from '@/lib/auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -29,6 +29,10 @@ export async function POST(req: NextRequest) {
 
   const household = await db.household.findUnique({ where: { id: householdId } })
   if (!household) return NextResponse.json({ error: 'خانه یافت نشد' }, { status: 404 })
+
+  // SECURITY FIX: Delete the old session before creating a new one to prevent session accumulation
+  const oldToken = await readSessionToken()
+  if (oldToken) await deleteSession(oldToken)
 
   const session = await createSession(ctx.user.id, householdId)
   await setSessionCookie(session.token)

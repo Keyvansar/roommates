@@ -28,21 +28,25 @@ export async function PATCH(
   const category = await db.category.findUnique({ where: { id } })
   if (!category) return NextResponse.json({ error: 'دسته یافت نشد' }, { status: 404 })
 
+  // SECURITY FIX: Never modify global demo categories in-place. Clone into
+  // the user's household scope and apply the update there instead.
+  if (category.householdId === null && ctx.household) {
+    const cloned = await db.category.create({
+      data: {
+        householdId: ctx.household.id,
+        title: body.title?.trim() || category.title,
+        icon: body.icon?.trim() || category.icon,
+        sortOrder: body.sortOrder !== undefined ? body.sortOrder : category.sortOrder,
+      },
+    })
+    return NextResponse.json({ category: cloned })
+  }
+
   // Authorization: the category must belong to the user's active household
-  // (or be a demo null-household category, in which case any authed user
-  // can edit it).
   if (category.householdId !== null && (!ctx.household || category.householdId !== ctx.household.id))
     return NextResponse.json({ error: 'این دسته متعلق به خانه شما نیست' }, { status: 403 })
 
-  // Auto-attach demo categories (householdId null) to the active household
-  // when an authed user edits them. This keeps the shared catalog from
-  // leaking edits across households.
-  let attachHouseholdId: string | null = category.householdId
-  if (category.householdId === null && ctx.household) {
-    attachHouseholdId = ctx.household.id
-  }
-
-  const updates: { title?: string; icon?: string; sortOrder?: number; householdId?: string | null } = {}
+  const updates: { title?: string; icon?: string; sortOrder?: number } = {}
   if (body.title !== undefined) {
     const t = body.title.trim()
     if (!t) return NextResponse.json({ error: 'نام دسته نمی‌تواند خالی باشد' }, { status: 400 })
@@ -55,9 +59,6 @@ export async function PATCH(
     if (typeof body.sortOrder !== 'number')
       return NextResponse.json({ error: 'sortOrder باید عدد باشد' }, { status: 400 })
     updates.sortOrder = body.sortOrder
-  }
-  if (attachHouseholdId !== category.householdId) {
-    updates.householdId = attachHouseholdId
   }
 
   const cat = await db.category.update({ where: { id }, data: updates })
@@ -88,11 +89,15 @@ export async function DELETE(
   const category = await db.category.findUnique({ where: { id } })
   if (!category) return NextResponse.json({ error: 'دسته یافت نشد' }, { status: 404 })
 
-  if (category.householdId !== null && (!ctx.household || category.householdId !== ctx.household.id))
+  // SECURITY FIX: Never delete global demo categories — they're shared templates.
+  if (category.householdId === null) {
+    return NextResponse.json({ error: 'دسته‌های نمونه قابل حذف نیستند' }, { status: 403 })
+  }
+
+  if (!ctx.household || category.householdId !== ctx.household.id)
     return NextResponse.json({ error: 'این دسته متعلق به خانه شما نیست' }, { status: 403 })
 
-  // Find the user's catalog scope (active household or demo null).
-  const scopeHouseholdId = ctx.household?.id ?? null
+  const scopeHouseholdId = ctx.household.id
 
   // Refuse to delete the last category in scope — the dashboard expects
   // at least one category to host items.
