@@ -1,0 +1,3 @@
+{
+  "/api/moderation/audit/route": "app/api/moderation/audit/route.js"
+}

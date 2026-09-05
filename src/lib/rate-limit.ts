@@ -3,11 +3,19 @@
 // Not distributed (won't work across multiple server instances) but sufficient
 // for the single-process sandbox environment.
 
+import { LRUCache } from 'lru-cache'
+
 interface RateLimitEntry {
   timestamps: number[]
 }
 
-const store = new Map<string, RateLimitEntry>()
+// Use LRU cache with max entries to prevent memory leaks
+// Max 10,000 unique identifiers, TTL of 1 hour for cleanup
+const store = new LRUCache<string, RateLimitEntry>({
+  max: 10000,
+  ttl: 60 * 60 * 1000, // 1 hour
+  updateAgeOnGet: false,
+})
 
 /**
  * Check if a request should be rate-limited.
@@ -48,14 +56,4 @@ export function getClientIP(req: Request): string {
   return 'unknown'
 }
 
-// Periodic cleanup of expired entries (every 5 minutes)
-if (typeof setInterval !== 'undefined') {
-  setInterval(() => {
-    const now = Date.now()
-    for (const [key, entry] of store) {
-      const valid = entry.timestamps.filter((ts) => now - ts < 300_000) // 5 min max window
-      if (valid.length === 0) store.delete(key)
-      else store.set(key, { timestamps: valid })
-    }
-  }, 300_000)
-}
+// LRU cache handles automatic cleanup via TTL, no need for manual interval
