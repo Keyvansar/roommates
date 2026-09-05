@@ -1,0 +1,3 @@
+{
+  "/api/moderation/logs/[id]/approve/route": "app/api/moderation/logs/[id]/approve/route.js"
+}
