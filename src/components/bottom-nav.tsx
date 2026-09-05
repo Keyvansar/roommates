@@ -40,9 +40,13 @@ export function BottomNav({ active, onChange }: BottomNavProps) {
     <nav
       aria-label="ناوبری اصلی"
       className="bg-background/95 supports-[backdrop-filter]:bg-background/80 sticky bottom-0 z-40 border-t pb-safe backdrop-blur"
-      style={{ gridTemplateColumns: `repeat(${visible.length}, minmax(0, 1fr))` }}
     >
-      <ul role="list" id={listId} className="mx-auto grid max-w-2xl">
+      <ul
+        role="list"
+        id={listId}
+        className="mx-auto grid w-full max-w-2xl"
+        style={{ gridTemplateColumns: `repeat(${visible.length}, minmax(0, 1fr))` }}
+      >
         {visible.map((tab) => {
           const Icon = tab.icon
           const isActive = active === tab.key

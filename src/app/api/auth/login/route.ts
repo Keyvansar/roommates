@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { verifyPassword, createSession, setSessionCookie, deleteSession, readSessionToken } from '@/lib/auth'
 import { checkRateLimit, getClientIP } from '@/lib/rate-limit'
+import { loginSchema } from '@/lib/validators' // ✅ Added Zod import here
 
 export const dynamic = 'force-dynamic'
 
@@ -28,11 +29,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'بدنه درخواست نامعتبر است' }, { status: 400 })
   }
 
-  const email = (body.email ?? '').trim().toLowerCase()
-  const password = body.password ?? ''
+  // ✅ Zod Validation Block
+  const parsed = loginSchema.safeParse(body)
+  if (!parsed.success) {
+    const firstError = parsed.error.issues[0]
+    const errorMessage = firstError?.message ?? 'اطلاعات وارد شده معتبر نیست'
+    return NextResponse.json({ error: errorMessage }, { status: 400 })
+  }
 
-  if (!email || !password)
-    return NextResponse.json({ error: 'ایمیل و رمز عبور را وارد کنید' }, { status: 400 })
+  // Extract variables and format the email to lowercase
+  const email = parsed.data.email.toLowerCase()
+  const password = parsed.data.password
 
   const user = await db.user.findUnique({ where: { email } })
 
@@ -57,7 +64,7 @@ export async function POST(req: NextRequest) {
     }
   }
   // Also delete expired sessions
-  await db.session.deleteMany({ where: { userId: user.id, expiresAt: { lt: new Date() } } }).catch(() => {})
+  await db.session.deleteMany({ where: { userId: user.id, expiresAt: { lt: new Date() } } }).catch(() => { })
 
   // Delete the old session cookie if one exists (prevents stale sessions)
   const oldToken = await readSessionToken()

@@ -33,16 +33,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
+import { AlertDialog, AlertDialogTrigger, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import {
@@ -903,12 +894,12 @@ function AboutSection() {
           کالاها، خریدها و امتیازها به حالت اولیه برمی‌گردند. این عمل برگشت‌ناپذیر است.
         </p>
         <AlertDialog open={resetOpen} onOpenChange={setResetOpen}>
-          <Button variant="outline" className="w-full gap-1.5" asChild>
-            <button type="button" disabled={reseed.isPending}>
+          <AlertDialogTrigger asChild>
+            <Button variant="outline" className="w-full gap-1.5" disabled={reseed.isPending}>
               <RotateCcw className="size-4" />
               {reseed.isPending ? 'در حال بازنشانی…' : 'بازنشانی کاتالوگ'}
-            </button>
-          </Button>
+            </Button>
+          </AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>بازنشانی کاتالوگ؟</AlertDialogTitle>
@@ -934,12 +925,12 @@ function AboutSection() {
         <div className="space-y-2">
           {household && !isOwner && (
             <AlertDialog open={leaveOpen} onOpenChange={setLeaveOpen}>
-              <Button variant="outline" className="w-full gap-1.5 text-destructive hover:text-destructive" asChild>
-                <button type="button" disabled={leave.isPending}>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" className="w-full gap-1.5 text-destructive hover:text-destructive" disabled={leave.isPending}>
                   <UserX className="size-4" />
                   {leave.isPending ? 'در حال خروج…' : 'ترک خانه'}
-                </button>
-              </Button>
+                </Button>
+              </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
                   <AlertDialogTitle>ترک خانه؟</AlertDialogTitle>
@@ -962,12 +953,12 @@ function AboutSection() {
 
           {household && isOwner && (
             <AlertDialog open={delHouseOpen} onOpenChange={(v) => { setDelHouseOpen(v); if (!v) setConfirmText('') }}>
-              <Button variant="outline" className="w-full gap-1.5 text-destructive hover:text-destructive" asChild>
-                <button type="button" disabled={deleteHousehold.isPending}>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" className="w-full gap-1.5 text-destructive hover:text-destructive" disabled={deleteHousehold.isPending}>
                   <Trash2 className="size-4" />
                   {deleteHousehold.isPending ? 'در حال حذف…' : 'حذف خانه'}
-                </button>
-              </Button>
+                </Button>
+              </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
                   <AlertDialogTitle>حذف خانه؟</AlertDialogTitle>
@@ -996,12 +987,12 @@ function AboutSection() {
           )}
 
           <AlertDialog open={delAccOpen} onOpenChange={setDelAccOpen}>
-            <Button variant="outline" className="w-full gap-1.5 text-destructive hover:text-destructive" asChild>
-              <button type="button" disabled={deleteAccount.isPending}>
+            <AlertDialogTrigger asChild>
+              <Button variant="outline" className="w-full gap-1.5 text-destructive hover:text-destructive" disabled={deleteAccount.isPending}>
                 <UserMinus className="size-4" />
                 {deleteAccount.isPending ? 'در حال حذف…' : 'حذف حساب کاربری'}
-              </button>
-            </Button>
+              </Button>
+            </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
                 <AlertDialogTitle>حذف حساب کاربری؟</AlertDialogTitle>

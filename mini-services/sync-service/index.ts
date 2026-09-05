@@ -31,29 +31,62 @@ interface ChangePayload {
   householdId?: string
 }
 
-io.on('connection', (socket) => {
+// Helper function to read cookies from the websocket handshake
+function getCookie(req: any, name: string) {
+  const cookies = req.headers.cookie;
+  if (!cookies) return null;
+  const match = cookies.match(new RegExp(`(^| )${name}=([^;]+)`));
+  return match ? match[2] : null;
+}
+
+// Import Prisma to verify the session
+import { PrismaClient } from '@prisma/client'
+const prisma = new PrismaClient()
+
+io.on('connection', async (socket) => {
   console.log(`[sync] connected ${socket.id} — total ${io.engine.clientsCount}`)
 
-  // Clients must send a 'join' event with their householdId to be placed
-  // in a scoped room. Unauthenticated sockets remain in a default room
-  // and will NOT receive presence lists or change broadcasts.
+  // SECURITY FIX: Verify the user's session cookie immediately upon connection
+  const sessionToken = getCookie(socket.request, 'hamkhaneh_session')
+  if (!sessionToken) {
+    console.log(`[sync] rejected ${socket.id}: no session cookie`)
+    socket.disconnect(true)
+    return
+  }
+
+  // Check the database to see if this session is valid and who it belongs to
+  const session = await prisma.session.findUnique({
+    where: { token: sessionToken },
+    include: { user: true }
+  })
+
+  if (!session || session.expiresAt < new Date()) {
+    console.log(`[sync] rejected ${socket.id}: invalid or expired session`)
+    socket.disconnect(true)
+    return
+  }
+
+  // Store the verified user data on the socket for later use
+  socket.data.userId = session.userId
+  socket.data.authenticatedHouseholdId = session.activeHouseholdId
+
   socket.on('join', (data: { householdId?: string; profile?: string }) => {
-    const householdId = data?.householdId
-    if (!householdId || typeof householdId !== 'string' || householdId.length < 5) {
-      // Reject join without valid householdId — prevents enumeration
-      socket.emit('error', { message: 'householdId required' })
+    const requestedHouseholdId = data?.householdId
+
+    // SECURITY FIX: Ensure they are only joining the household they are authenticated for!
+    if (!requestedHouseholdId || requestedHouseholdId !== socket.data.authenticatedHouseholdId) {
+      socket.emit('error', { message: 'Unauthorized: Household mismatch' })
       return
     }
 
-    const room = `hh:${householdId}`
+    const room = `hh:${requestedHouseholdId}`
     socket.join(room)
-    socket.data.householdId = householdId
     socket.data.profile = data.profile ?? null
 
     // Send presence list ONLY for this household room
     const list: Array<{ id: string; profile: string }> = []
     for (const [id, s] of io.sockets.sockets) {
-      if (s.data?.householdId === householdId && s.data?.profile) {
+      if (s.data?.authenticatedHouseholdId === requestedHouseholdId && s.data?.profile) {
         list.push({ id, profile: s.data.profile })
       }
     }
@@ -63,9 +96,9 @@ io.on('connection', (socket) => {
     io.to(room).emit('presence', { id: socket.id, profile: data.profile, online: true })
   })
 
-  // Broadcast changes only to the sender's household room
+  // Broadcast changes only to the sender's verified household room
   socket.on('change', (payload: ChangePayload) => {
-    const householdId = socket.data?.householdId ?? payload?.householdId
+    const householdId = socket.data?.authenticatedHouseholdId
     if (!householdId) return // unauthenticated sockets cannot broadcast
 
     const room = `hh:${householdId}`
@@ -73,7 +106,7 @@ io.on('connection', (socket) => {
   })
 
   socket.on('disconnect', () => {
-    const householdId = socket.data?.householdId
+    const householdId = socket.data?.authenticatedHouseholdId
     const profile = socket.data?.profile
     if (householdId && profile) {
       const room = `hh:${householdId}`

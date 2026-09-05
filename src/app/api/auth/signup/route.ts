@@ -1,3 +1,4 @@
+import { signupSchema } from '@/lib/validators'
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import {
@@ -62,26 +63,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'بدنه درخواست نامعتبر است' }, { status: 400 })
   }
 
-  const name = (body.name ?? '').trim()
-  const email = (body.email ?? '').trim().toLowerCase()
-  const password = body.password ?? ''
-  const householdName = (body.householdName ?? '').trim()
-  const inviteCode = (body.inviteCode ?? '').trim().toUpperCase()
+  // Validate input using Zod
+  const parsed = signupSchema.safeParse(body)
+  if (!parsed.success) {
+    // Safely get the first error message (using .issues for Zod v4 compatibility)
+    const firstError = parsed.error.issues[0]
+    const errorMessage = firstError?.message ?? 'اطلاعات وارد شده معتبر نیست'
+    return NextResponse.json({ error: errorMessage }, { status: 400 })
+  }
 
-  if (!name) return NextResponse.json({ error: 'نام را وارد کنید' }, { status: 400 })
-  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
-    return NextResponse.json({ error: 'ایمیل معتبر وارد کنید' }, { status: 400 })
-  if (password.length < 8)
-    return NextResponse.json({ error: 'رمز عبور باید حداقل ۸ کاراکتر باشد' }, { status: 400 })
-
-  // Password complexity: must contain at least one letter and one digit
-  if (!/[a-zA-Z]/.test(password) || !/[0-9]/.test(password))
-    return NextResponse.json({ error: 'رمز عبور باید شامل حرف و عدد باشد' }, { status: 400 })
-
-  // Block common weak passwords
-  const COMMON_PASSWORDS = ['password', '123456', '12345678', 'qwerty', 'abc123', '111111', '000000', '123123', 'iloveyou', 'admin']
-  if (COMMON_PASSWORDS.includes(password.toLowerCase()))
-    return NextResponse.json({ error: 'رمز عبور بسیار رایج است' }, { status: 400 })
+  // ✅ FIX: Extract the validated variables here so the rest of the code can use them!
+  const { name, password, householdName } = parsed.data
+  const email = parsed.data.email.toLowerCase()
+  const inviteCode = (parsed.data.inviteCode ?? '').toUpperCase()
 
   // SECURITY FIX: Don't reveal if email is already registered (user enumeration).
   // Instead of returning 409 with "already registered", silently log in the
