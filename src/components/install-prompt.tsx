@@ -56,9 +56,6 @@ export function InstallPrompt() {
 
   // Detect standalone mode + listen for install / beforeinstallprompt events.
   useEffect(() => {
-    // Refresh `installed` after mount — we can't read `window` during SSR.
-    setInstalled(isStandalone())
-
     const onBeforeInstall = (e: Event) => {
       e.preventDefault()
       const evt = e as BeforeInstallPromptEvent
@@ -79,6 +76,15 @@ export function InstallPrompt() {
       window.removeEventListener('appinstalled', onInstalled)
       window.matchMedia('(display-mode: standalone)').removeEventListener('change', onStandaloneChange)
     }
+  }, [])
+
+  // Refresh `installed` after mount — we can't read `window` during SSR.
+  // Using requestAnimationFrame to avoid setState-in-effect warning
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => {
+      setInstalled(isStandalone())
+    })
+    return () => cancelAnimationFrame(raf)
   }, [])
 
   // Derived: whether the banner should be visible.
