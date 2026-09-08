@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { verifyPassword, createSession, setSessionCookie, deleteSession, readSessionToken } from '@/lib/auth'
 import { checkRateLimit, getClientIP } from '@/lib/rate-limit'
 import { loginSchema } from '@/lib/validators' // ✅ Added Zod import here
+import { checkLockoutStatus, recordFailedAttempt, resetFailedAttempts } from '@/lib/account-lockout'
 
 export const dynamic = 'force-dynamic'
 
@@ -41,13 +42,41 @@ export async function POST(req: NextRequest) {
   const email = parsed.data.email.toLowerCase()
   const password = parsed.data.password
 
+  // SECURITY FIX: Check account lockout status
+  const lockoutStatus = await checkLockoutStatus(email)
+  if (lockoutStatus.isLocked) {
+    const minutesRemaining = Math.ceil((lockoutStatus.remainingLockTime || 0) / 60000)
+    return NextResponse.json(
+      { error: `حساب کاربری به دلیل تلاش‌های ناموفق قفل شده است. لطفاً ${minutesRemaining} دقیقه دیگر تلاش کنید.` },
+      { status: 423 }
+    )
+  }
+
   const user = await db.user.findUnique({ where: { email } })
 
   // Generic message — never reveal whether the email exists.
   const invalid = NextResponse.json({ error: 'ایمیل یا رمز عبور نادرست است' }, { status: 401 })
 
-  if (!user) return invalid
-  if (!verifyPassword(password, user.passwordHash)) return invalid
+  if (!user) {
+    // Record failed attempt even for non-existent users (prevents enumeration)
+    await recordFailedAttempt(email)
+    return invalid
+  }
+  
+  if (!verifyPassword(password, user.passwordHash)) {
+    // Record failed attempt
+    const lockoutResult = await recordFailedAttempt(email)
+    if (lockoutResult.isLocked) {
+      return NextResponse.json(
+        { error: 'حساب کاربری به دلیل تلاش‌های ناموفق متعدد قفل شد. لطفاً ۱۵ دقیقه دیگر تلاش کنید.' },
+        { status: 423 }
+      )
+    }
+    return invalid
+  }
+
+  // SECURITY FIX: Reset failed attempts on successful login
+  await resetFailedAttempts(email)
 
   // SECURITY FIX: Clean up old sessions for this user before creating a new one
   // to prevent session accumulation. Keep at most 5 sessions per user.

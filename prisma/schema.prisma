@@ -203,3 +203,16 @@ model ModerationAction {
   @@index([actorId])
   @@index([createdAt])
 }
+
+/// لاگ امنیتی (قفل حساب، تلاش ناموفق، و غیره)
+model SecurityLog {
+  id        String   @id @default(cuid())
+  eventType String
+  identifier String
+  metadata  String?
+  createdAt DateTime @default(now())
+
+  @@index([eventType])
+  @@index([identifier])
+  @@index([createdAt])
+}
