@@ -1,0 +1,3 @@
+{
+  "/api/house-rules/[id]/vote/route": "app/api/house-rules/[id]/vote/route.js"
+}

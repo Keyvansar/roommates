@@ -3,16 +3,20 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
-import crypto from 'crypto'
 
 export const CSRF_COOKIE_NAME = 'csrf_token'
 export const CSRF_HEADER_NAME = 'x-csrf-token'
 
 /**
- * Generate a cryptographically secure CSRF token
+ * Generate a cryptographically secure CSRF token using Web Crypto API
+ * Compatible with Edge Runtime
  */
 export function generateCSRFToken(): string {
-  return crypto.randomBytes(32).toString('hex')
+  const array = new Uint8Array(32)
+  crypto.getRandomValues(array)
+  return Array.from(array)
+    .map(byte => byte.toString(16).padStart(2, '0'))
+    .join('')
 }
 
 /**
