@@ -119,6 +119,33 @@ type RouteHandlerConfig<Route extends AppRouteHandlerRoutes = AppRouteHandlerRou
   type __Unused = __Check
 }
 
+// Validate ../../src/app/api/house-rules/[id]/route.ts
+{
+  type __IsExpected<Specific extends RouteHandlerConfig<"/api/house-rules/[id]">> = Specific
+  const handler = {} as typeof import("../../src/app/api/house-rules/[id]/route.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
+// Validate ../../src/app/api/house-rules/[id]/vote/route.ts
+{
+  type __IsExpected<Specific extends RouteHandlerConfig<"/api/house-rules/[id]/vote">> = Specific
+  const handler = {} as typeof import("../../src/app/api/house-rules/[id]/vote/route.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
+// Validate ../../src/app/api/house-rules/route.ts
+{
+  type __IsExpected<Specific extends RouteHandlerConfig<"/api/house-rules">> = Specific
+  const handler = {} as typeof import("../../src/app/api/house-rules/route.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
 // Validate ../../src/app/api/households/[id]/danger/route.ts
 {
   type __IsExpected<Specific extends RouteHandlerConfig<"/api/households/[id]/danger">> = Specific

@@ -44,6 +44,7 @@ model Household {
   items        Item[]
   settings     HouseholdSetting?
   flags        Flag[]
+  rules        HouseRule[]
 }
 
 /// عضویت کاربر در خانه + نقش
@@ -86,9 +87,11 @@ model Profile {
   avatarEmoji String?
   createdAt   DateTime  @default(now())
 
-  itemsBought  Item[]       @relation("ItemBuyer")
-  purchaseLogs PurchaseLog[]
-  flagsRaised  Flag[]       @relation("FlagReporter")
+  itemsBought    Item[]       @relation("ItemBuyer")
+  purchaseLogs   PurchaseLog[]
+  flagsRaised    Flag[]       @relation("FlagReporter")
+  proposedRules  HouseRule[]  @relation("RuleProposer")
+  ruleVotes      RuleVote[]   @relation("RuleVoter")
 
   @@index([householdId])
   @@index([userId])
@@ -215,4 +218,39 @@ model SecurityLog {
   @@index([eventType])
   @@index([identifier])
   @@index([createdAt])
+}
+
+/// قوانین خانه (House Rules)
+model HouseRule {
+  id          String   @id @default(cuid())
+  householdId String
+  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  status      String   @default("pending") // pending, active, archived
+  type        String   @default("normal") // normal, reminder, nudge
+  proposedById String
+  proposedBy  Profile  @relation("RuleProposer", fields: [proposedById], references: [id], onDelete: Cascade)
+  approvedBy  String   @default("[]") // JSON array of profile IDs who approved
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  votes       RuleVote[]
+
+  @@index([householdId])
+  @@index([status])
+}
+
+/// رأی‌گیری برای قوانین خانه
+model RuleVote {
+  id        String   @id @default(cuid())
+  ruleId    String
+  rule      HouseRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  profileId String
+  profile   Profile  @relation("RuleVoter", fields: [profileId], references: [id], onDelete: Cascade)
+  vote      String   // approve, reject
+  createdAt DateTime @default(now())
+
+  @@unique([ruleId, profileId])
+  @@index([ruleId])
 }
