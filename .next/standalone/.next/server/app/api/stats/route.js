@@ -1,9 +1,0 @@
-var R=require("../../../chunks/[turbopack]_runtime.js")("server/app/api/stats/route.js")
-R.c("server/chunks/[externals]__1w68z_9._.js")
-R.c("server/chunks/_1vs13eo._.js")
-R.c("server/chunks/[root-of-the-server]__0l3yhx4._.js")
-R.c("server/chunks/[root-of-the-server]__0rsdt01._.js")
-R.c("server/chunks/node_modules_date-fns-jalali_format_102fctm.js")
-R.c("server/chunks/_next-internal_server_app_api_stats_route_actions_0o9u2yi.js")
-R.m(18816)
-module.exports=R.m(18816).exports
